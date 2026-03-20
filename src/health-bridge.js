@@ -153,8 +153,9 @@ const addToHistory = (session, entry) => {
   session.healthHistory.push(entry);
 };
 
+const { randomBytes } = require('crypto');
 const generateId = (prefix = 'ID') =>
-  `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  `${prefix}-${Date.now()}-${randomBytes(4).toString('hex')}`;
 
 // ─── Stub health-action back-ends ─────────────────────────────────────────────
 // Replace these with real integrations (EHR, scheduling system, pharmacy API …)

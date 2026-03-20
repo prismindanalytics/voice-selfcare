@@ -38,7 +38,12 @@ class RealtimeClient {
       });
 
       this.ws.on('message', (data) => {
-        this.handleRealtimeMessage(JSON.parse(data));
+        let msg;
+        try { msg = JSON.parse(data); } catch (e) {
+          console.error('[Realtime] Failed to parse message:', e.message);
+          return;
+        }
+        this.handleRealtimeMessage(msg);
       });
 
       this.ws.on('error', (error) => {
@@ -252,10 +257,15 @@ MEDICAL PRINCIPLES:
         if (message.transcript) this.conversation.push({ role: 'patient', text: message.transcript });
         break;
 
-      case 'response.function_call_arguments.done':
-        console.log('[Realtime] Function call:', message.name, message.arguments);
-        this.handleToolCall(message.name, JSON.parse(message.arguments), message.item_id || message.call_id);
+      case 'response.function_call_arguments.done': {
+        const callId = message.item_id || message.call_id;
+        if (!callId) { console.error('[Realtime] Tool call missing id, skipping'); break; }
+        let args;
+        try { args = JSON.parse(message.arguments); } catch (e) { console.error('[Realtime] Bad tool args:', e.message); break; }
+        console.log('[Realtime] Function call:', message.name);
+        this.handleToolCall(message.name, args, callId);
         break;
+      }
 
       case 'response.done':
         console.log('[Realtime] Response completed');
@@ -362,6 +372,8 @@ MEDICAL PRINCIPLES:
     console.log('[Realtime] Audio delta received – override sendAudioToProvider() to relay to your telephony provider');
   }
 
+  // Sends AI text as TTS via SignalWire call redirect.
+  // If you are using Twilio Media Streams, override this method with your own implementation.
   async sendTextToProvider(text) {
     if (!this.session.callSid) return;
 

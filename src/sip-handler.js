@@ -281,7 +281,13 @@ function monitorCall(callId, initialPhone = null) {
   });
 
   ws.on('message', (data) => {
-    const message = JSON.parse(data);
+    let message;
+    try {
+      message = JSON.parse(data);
+    } catch (e) {
+      console.error('[Monitor] Failed to parse message:', e.message);
+      return;
+    }
     console.log(`[Monitor] ${message.type}`);
 
     if (message.type === 'session.created') {
@@ -317,7 +323,16 @@ function monitorCall(callId, initialPhone = null) {
 
     if (message.type === 'response.function_call_arguments.done') {
       const toolCallId = message.call_id || message.item_id;
-      handleToolCall(ws, message.name, JSON.parse(message.arguments), toolCallId, safePhone, callId);
+      if (!toolCallId) {
+        console.error('[Monitor] Tool call missing call_id and item_id, skipping');
+        return;
+      }
+      let args;
+      try { args = JSON.parse(message.arguments); } catch (e) {
+        console.error('[Monitor] Failed to parse tool arguments:', e.message);
+        return;
+      }
+      handleToolCall(ws, message.name, args, toolCallId, safePhone, callId);
     }
 
     if (message.type === 'response.output_audio_transcript.done') {
@@ -339,6 +354,7 @@ function monitorCall(callId, initialPhone = null) {
 
   ws.on('close', (code, reason) => {
     console.log(`[Monitor] Closed for ${callId} code=${code}`);
+    acceptedCalls.delete(callId);
     try {
       if (conversation.length > 0) {
         healthBridge.finalizeVoiceCall(safePhone, conversation, callId);
