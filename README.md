@@ -9,7 +9,7 @@ The production runtime is now a fully native Cloudflare deployment:
 - Cloudflare KV for finalized transcript export.
 - OpenAI Realtime API with `gpt-realtime-2`, `marin` voice, and `gpt-4o-transcribe` input transcription by default.
 - Post-call patient/provider summaries and phone-level memory consolidation with `gpt-5.5`.
-- Timed provider/pharmacy option lookup with `gpt-5.5`, capped by `PROVIDER_LOOKUP_TIMEOUT_MS` so voice tool calls fall back quickly instead of leaving long silence.
+- Timed provider/pharmacy option lookup with `gpt-5.4-mini`, capped by `PROVIDER_LOOKUP_TIMEOUT_MS` so voice tool calls fall back quickly instead of leaving long silence.
 
 This system provides health guidance and triage, not medical diagnosis.
 
@@ -272,7 +272,7 @@ If the lookup is slow, unavailable, or the location is too vague, the tool retur
 | `OPENAI_REALTIME_VOICE` | no | `marin` | Realtime output voice |
 | `OPENAI_SUMMARY_MODEL` | no | `gpt-5.5` | Post-call summary model |
 | `OPENAI_MEMORY_MODEL` | no | `gpt-5.5` | Post-call phone memory consolidation model |
-| `OPENAI_PROVIDER_MODEL` | no | `gpt-5.5` | Short provider/pharmacy option lookup model |
+| `OPENAI_PROVIDER_MODEL` | no | `gpt-5.4-mini` | Short provider/pharmacy option lookup model |
 | `OPENAI_TRANSCRIPTION_MODEL` | no | `gpt-4o-transcribe` | Patient-side input audio transcription model |
 | `OPENAI_MAX_OUTPUT_TOKENS` | no | `900` | Bounds spoken responses without truncating audio |
 | `OPENAI_WEBHOOK_SECRET` | no | - | Enables Standard Webhooks signature verification |

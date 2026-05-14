@@ -3,7 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2';
 const DEFAULT_SUMMARY_MODEL = 'gpt-5.5';
 const DEFAULT_MEMORY_MODEL = 'gpt-5.5';
-const DEFAULT_PROVIDER_MODEL = 'gpt-5.5';
+const DEFAULT_PROVIDER_MODEL = 'gpt-5.4-mini';
 const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
 const DEFAULT_VOICE = 'marin';
 const DEFAULT_MAX_OUTPUT_TOKENS = 900;
@@ -2399,7 +2399,7 @@ function realtimeTools() {
     {
       type: 'function',
       name: 'request_commodities',
-      description: 'Create a simulated pickup request when the patient needs medicines, refills, test kits, wound supplies, contraception, ORS, or other health commodities. For medicine refills, call this only after eligibility is established: medicine/regimen, existing prescription or clinic record/refill card, remaining supply or last dose, and city/neighborhood or address. If provider_name/provider_address are not supplied, the backend will run a short gpt-5.5 provider lookup and choose the first returned option. Do not spend a long spoken turn searching.',
+      description: 'Create a simulated pickup request when the patient needs medicines, refills, test kits, wound supplies, contraception, ORS, or other health commodities. For medicine refills, call this only after eligibility is established: medicine/regimen, existing prescription or clinic record/refill card, remaining supply or last dose, and city/neighborhood or address. If provider_name/provider_address are not supplied, the backend will run a short provider lookup and choose the first returned option. Do not spend a long spoken turn searching.',
       parameters: {
         type: 'object',
         properties: {
@@ -2422,7 +2422,7 @@ function realtimeTools() {
     {
       type: 'function',
       name: 'request_test',
-      description: 'Create a simulated diagnostic test request only after judging that testing is appropriate and enough details are known: test/reason, urgency, and city/neighborhood or address. If provider_name/provider_address are not supplied, the backend will run a short gpt-5.5 provider lookup and choose the first returned option. This is simulated and unverified, not live search. Do not spend a long spoken turn searching.',
+      description: 'Create a simulated diagnostic test request only after judging that testing is appropriate and enough details are known: test/reason, urgency, and city/neighborhood or address. If provider_name/provider_address are not supplied, the backend will run a short provider lookup and choose the first returned option. This is simulated and unverified, not live search. Do not spend a long spoken turn searching.',
       parameters: {
         type: 'object',
         properties: {
