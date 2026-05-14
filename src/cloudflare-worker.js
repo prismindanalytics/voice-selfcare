@@ -243,6 +243,7 @@ export class CallSession extends DurableObject {
       patientSummary: this.getMeta('patient_summary'),
       providerSummary: this.getMeta('provider_summary'),
       caseType: this.getMeta('case_type'),
+      languageUsed: this.getMeta('language_used'),
       providerFollowupNeeded: this.getMeta('provider_followup_needed') === 'true',
       providerFollowupReason: this.getMeta('provider_followup_reason'),
       callerMemoryContext: this.getMetaJson('caller_memory_context'),
@@ -619,6 +620,7 @@ export class CallSession extends DurableObject {
     this.setMeta('patient_summary', summaries.patientSummary);
     this.setMeta('provider_summary', summaries.providerSummary || '');
     this.setMeta('case_type', summaries.caseType);
+    this.setMeta('language_used', summaries.languageUsed || '');
     this.setMeta('provider_followup_needed', String(summaries.providerFollowupNeeded));
     this.setMeta('provider_followup_reason', summaries.providerFollowupReason || '');
     this.setMeta('references', JSON.stringify(buildReferences(artifacts)));
@@ -657,6 +659,7 @@ export class CallSession extends DurableObject {
       patientSummary: summaries.patientSummary,
       providerSummary: summaries.providerSummary,
       caseType: summaries.caseType,
+      languageUsed: summaries.languageUsed || '',
       providerFollowupNeeded: summaries.providerFollowupNeeded,
       providerFollowupReason: summaries.providerFollowupReason,
       references: buildReferences(artifacts),
@@ -691,12 +694,13 @@ export class CallSession extends DurableObject {
             role: 'system',
             content: [
               'Create two operational summaries for a health guidance phone call.',
-              'Return strict JSON only with keys: patientSummary, providerSummary, providerFollowupNeeded, providerFollowupReason, caseType, commodityPickupNeeded, commodityItems, testNeeded, testNames.',
+              'Return strict JSON only with keys: patientSummary, providerSummary, providerFollowupNeeded, providerFollowupReason, caseType, languageUsed, commodityPickupNeeded, commodityItems, testNeeded, testNames.',
               'patientSummary: warm, plain-language, 5-8 short lines for the patient. Include appointment, referral, commodity pickup, and test reference numbers from the supplied artifacts when present. For test/refill logistics, include the next action and simulated provider location from artifacts.',
               'providerSummary: null unless referral, appointment/follow-up, diagnostic testing, commodities, urgent symptoms, or continuity of care is needed. If present, write concise clinical handoff notes for a healthcare provider.',
               'providerFollowupNeeded: true only when provider follow-up/referral/testing/commodity pickup/urgent escalation is relevant.',
               'providerFollowupReason: one of none, referral, follow_up, appointment, test, commodities, urgent, mixed.',
               'caseType: one of simple_acute, simple_chronic, urgent, administrative, unknown.',
+              'languageUsed: the main spoken language used by the patient, such as English, Spanish, French, Haitian Creole, Swahili, or unknown. Do not infer ethnicity or nationality.',
               'commodityPickupNeeded: true only for an actual commodity, supply, medicine refill, kit, or pickup request. Do not mark true for general self-care advice or casual mention of medicine.',
               'testNeeded: true only when a diagnostic test is actually recommended or requested.',
               'Never generate post-call pickup or test IDs yourself. If the tool did not run during the call, state what information is still needed instead.',
@@ -1655,6 +1659,10 @@ function transcriptReaderPage() {
             <div id="patientPhone" class="meta-value">-</div>
           </div>
           <div class="meta-item">
+            <div class="meta-label">Language</div>
+            <div id="languageUsed" class="meta-value">-</div>
+          </div>
+          <div class="meta-item">
             <div class="meta-label">Patient Turns</div>
             <div id="patientTurns" class="meta-value">-</div>
           </div>
@@ -1739,6 +1747,7 @@ function transcriptReaderPage() {
       transcriptSubtitle: document.getElementById('transcriptSubtitle'),
       completedAt: document.getElementById('completedAt'),
       patientPhone: document.getElementById('patientPhone'),
+      languageUsed: document.getElementById('languageUsed'),
       patientTurns: document.getElementById('patientTurns'),
       assistantTurns: document.getElementById('assistantTurns'),
       caseType: document.getElementById('caseType'),
@@ -1931,6 +1940,7 @@ function transcriptReaderPage() {
       els.transcriptSubtitle.textContent = transcript.callId || '';
       els.completedAt.textContent = formatDate(transcript.completedAt);
       els.patientPhone.textContent = transcript.patientPhone || '-';
+      els.languageUsed.textContent = transcript.languageUsed || '-';
       els.memoryPhoneInput.value = transcript.patientPhone || els.memoryPhoneInput.value;
       els.loadSelectedMemoryButton.disabled = !transcript.patientPhone;
       els.patientTurns.textContent = String(messages.filter((message) => message.role === 'patient').length);
@@ -2061,6 +2071,8 @@ function transcriptReaderPage() {
         memory.updatedAt ? 'Updated: ' + formatDate(memory.updatedAt) : '',
         memory.lastCallAt ? 'Last call: ' + formatDate(memory.lastCallAt) : '',
         memory.callCount ? 'Call count: ' + memory.callCount : '',
+        memory.preferredLanguage ? 'Preferred language: ' + memory.preferredLanguage : '',
+        memory.lastLanguageUsed ? 'Last language: ' + memory.lastLanguageUsed : '',
         memory.identityConfidence ? 'Identity: ' + labelize(memory.identityConfidence) : '',
         memory.sharedPhoneWarning || ''
       ].filter(Boolean).join('\\n'));
@@ -2077,6 +2089,7 @@ function transcriptReaderPage() {
       const detail = document.createElement('div');
       detail.className = 'memory-row';
       detail.textContent = [
+        profile.preferredLanguage ? 'Language: ' + profile.preferredLanguage : '',
         profile.safeForVoiceContext || '',
         profile.safeContinuityItems?.length ? 'Safe continuity: ' + profile.safeContinuityItems.join('; ') : '',
         profile.openItems?.length ? 'Open items: ' + profile.openItems.join('; ') : '',
@@ -2219,6 +2232,7 @@ function buildMemoryInstructions(memoryContext) {
     'The following context is linked only to this phone number. This number may be shared by multiple people, so do not assume the current caller is the prior patient.',
     'Use this only as quiet continuity context. Do not say "last time you called..." or disclose prior details.',
     'First establish who the call is for with a neutral question such as: "Is this for you or someone else, and is it about a previous concern or something new?"',
+    'If a language hint is present, you may start in that language or use a brief bilingual greeting. If the caller uses another language, switch immediately.',
     'Only use a profile hint after the caller independently confirms the same person or same issue. If uncertain, ignore the memory and treat the call as new.',
     'Never reveal or hint at sensitive prior history from phone memory, including gender-based violence, domestic violence, sexual assault, abuse, HIV/STI details, reproductive history, mental health crisis, substance use, or legal risk.',
     '',
@@ -2229,12 +2243,17 @@ function buildMemoryInstructions(memoryContext) {
 function buildMemoryContextText(memoryContext) {
   if (!memoryContext) return '';
   const lines = [];
+  const languageHint = memoryContext.preferredLanguage || memoryContext.lastLanguageUsed || '';
+  if (languageHint) {
+    lines.push(`Language hint: ${languageHint}`);
+  }
   if (memoryContext.householdSafeContext) {
     lines.push(`Safe household-level context: ${memoryContext.householdSafeContext}`);
   }
   for (const profile of memoryContext.profiles || []) {
     const parts = [
       profile.profileLabel ? `Profile: ${profile.profileLabel}` : '',
+      profile.preferredLanguage ? `Language: ${profile.preferredLanguage}` : '',
       profile.safeForVoiceContext || '',
       profile.safeContinuityItems?.length ? `Safe continuity: ${profile.safeContinuityItems.join('; ')}` : '',
       profile.openItems?.length ? `Open items: ${profile.openItems.join('; ')}` : '',
@@ -2722,6 +2741,7 @@ function normalizeSummaries(parsed, messages, artifacts) {
       ['simple_acute', 'simple_chronic', 'urgent', 'administrative', 'unknown'],
       fallback.caseType
     ),
+    languageUsed: normalizeLanguageHint(parsed.languageUsed) || fallback.languageUsed,
     commodityPickupNeeded: Boolean(parsed.commodityPickupNeeded),
     commodityItems: normalizeList(parsed.commodityItems),
     testNeeded: Boolean(parsed.testNeeded),
@@ -2753,6 +2773,7 @@ function fallbackSummaries(messages, artifacts) {
     providerFollowupNeeded,
     providerFollowupReason: providerFollowupNeeded ? inferProviderReason(artifacts) : 'none',
     caseType: artifacts.emergencies.length ? 'urgent' : 'unknown',
+    languageUsed: inferLanguageHintFromMessages(messages) || 'unknown',
     commodityPickupNeeded: false,
     commodityItems: [],
     testNeeded: false,
@@ -2817,6 +2838,7 @@ async function generateCallerMemoryRecord(env, input) {
   const phoneHash = await sha256Hex(phone);
   const now = new Date().toISOString();
   const currentRestrictedCategories = detectRestrictedCategories(JSON.stringify({ summaries, messages, artifacts }));
+  const currentLanguage = normalizeLanguageHint(summaries.languageUsed) || inferLanguageHintFromMessages(messages);
   const base = {
     version: 1,
     phoneHash,
@@ -2826,6 +2848,8 @@ async function generateCallerMemoryRecord(env, input) {
     lastCallAt: input.completedAt || now,
     identityConfidence: 'phone_number_only',
     sharedPhoneWarning: 'This memory is linked to a phone number only. It may represent multiple people and must not be treated as confirmed identity.',
+    preferredLanguage: normalizeLanguageHint(existing?.preferredLanguage) || '',
+    lastLanguageUsed: currentLanguage || normalizeLanguageHint(existing?.lastLanguageUsed) || '',
     profiles: normalizeMemoryProfiles(existing?.profiles || []),
     householdSafeContext: normalizeOptionalText(existing?.householdSafeContext) || '',
     restrictedMemoryPresent: Boolean(existing?.restrictedMemoryPresent) || currentRestrictedCategories.length > 0,
@@ -2858,9 +2882,13 @@ async function generateCallerMemoryRecord(env, input) {
             'Organize profiles by stable profileId and concise non-sensitive profileLabel. Keep related continuity items under the right profile.',
             'Preserve stable non-sensitive chronic or continuity flags when still relevant. Refresh stale open items, close resolved items, and keep only the most useful current facts.',
             'A phone number may be shared by multiple people. Maintain a small list of safe household profiles, not a single patient identity.',
-            'Return strict JSON only with keys: householdSafeContext, profiles, restrictedMemoryPresent, restrictedCategories.',
-            'profiles must be an array of up to 5 objects with keys: profileId, profileLabel, safeForVoiceContext, safeContinuityItems, openItems, carePreferences, restrictedMemoryPresent, restrictedCategories.',
+            'Return strict JSON only with keys: preferredLanguage, lastLanguageUsed, householdSafeContext, profiles, restrictedMemoryPresent, restrictedCategories.',
+            'preferredLanguage: the safest language hint for future calls from this phone, such as English, Spanish, French, Haitian Creole, Swahili, or blank if unknown. It may come from the latest call or stable previous calls.',
+            'lastLanguageUsed: the main language used in the current call, or blank if unknown.',
+            'Do not infer ethnicity, nationality, migration status, or sensitive identity from language.',
+            'profiles must be an array of up to 5 objects with keys: profileId, profileLabel, preferredLanguage, safeForVoiceContext, safeContinuityItems, openItems, carePreferences, restrictedMemoryPresent, restrictedCategories.',
             'profileLabel must be generic and non-sensitive, such as "adult caller", "caregiver for child", or "older adult"; do not use diagnoses, medicines, abuse history, sexual history, HIV/STI status, pregnancy details, or mental health crisis as labels.',
+            'profile preferredLanguage should be blank unless the language preference clearly belongs to that generic profile.',
             'safeForVoiceContext and safeContinuityItems may contain only information safe to quietly use if someone from this number calls again.',
             'Do not put gender-based violence, domestic violence, sexual assault, abuse, HIV/STI details, reproductive history, mental health crisis, substance use, legal risk, or stigmatizing information in safeForVoiceContext, safeContinuityItems, openItems, carePreferences, or householdSafeContext.',
             'If sensitive information occurred, mark restrictedMemoryPresent true and use only generic restrictedCategories such as "safety-sensitive" or "sexual-health-sensitive". Do not include details.',
@@ -2894,6 +2922,7 @@ function transcriptToSummaries(transcript, artifacts) {
     providerFollowupNeeded: Boolean(transcript.providerFollowupNeeded) || hasCareCoordinationArtifacts(artifacts),
     providerFollowupReason: transcript.providerFollowupReason || inferProviderReason(artifacts),
     caseType: transcript.caseType || 'unknown',
+    languageUsed: normalizeLanguageHint(transcript.languageUsed) || inferLanguageHintFromMessages(transcript.messages || []),
     commodityPickupNeeded: Boolean(artifacts.commodityPickups?.length),
     commodityItems: artifacts.commodityPickups?.flatMap((item) => item.items || []) || [],
     testNeeded: Boolean(artifacts.testRequests?.length),
@@ -2916,19 +2945,24 @@ function callerMemoryPutOptions(env) {
 
 function buildVoiceSafeMemoryContext(memory) {
   if (!memory || typeof memory !== 'object') return null;
+  const preferredLanguage = normalizeLanguageHint(memory.preferredLanguage);
+  const lastLanguageUsed = normalizeLanguageHint(memory.lastLanguageUsed);
   const householdSafeContext = sanitizeMemoryText(memory.householdSafeContext, 500);
   const profiles = normalizeMemoryProfiles(memory.profiles || [])
     .filter((profile) => profile.safeForVoiceContext ||
+      profile.preferredLanguage ||
       profile.safeContinuityItems.length ||
       profile.openItems.length ||
       profile.carePreferences.length)
     .slice(0, 5);
 
-  if (!householdSafeContext && profiles.length === 0) return null;
+  if (!preferredLanguage && !lastLanguageUsed && !householdSafeContext && profiles.length === 0) return null;
   return {
     updatedAt: memory.updatedAt || null,
     callCount: Number(memory.callCount || 0),
     identityConfidence: 'phone_number_only',
+    preferredLanguage,
+    lastLanguageUsed,
     householdSafeContext,
     profiles
   };
@@ -2950,6 +2984,11 @@ function normalizeCallerMemory(parsed, base) {
 
   return {
     ...base,
+    preferredLanguage: normalizeLanguageHint(source.preferredLanguage) ||
+      normalizeLanguageHint(source.lastLanguageUsed) ||
+      base.preferredLanguage,
+    lastLanguageUsed: normalizeLanguageHint(source.lastLanguageUsed) ||
+      base.lastLanguageUsed,
     householdSafeContext: sanitizeMemoryText(
       sourceHasHouseholdContext ? source.householdSafeContext : base.householdSafeContext,
       500
@@ -2983,6 +3022,7 @@ function normalizeMemoryProfile(profile, index) {
   return {
     profileId,
     profileLabel,
+    preferredLanguage: normalizeLanguageHint(profile.preferredLanguage),
     safeForVoiceContext: sanitizeMemoryText(profile.safeForVoiceContext, 500),
     safeContinuityItems: sanitizeMemoryList(profile.safeContinuityItems, 5, 160),
     openItems: sanitizeMemoryList(profile.openItems, 5, 160),
@@ -3014,6 +3054,8 @@ function fallbackCallerMemory(base, summaries) {
       ]
     : normalizeMemoryProfiles(base.profiles || []);
   return normalizeCallerMemory({
+    preferredLanguage: base.preferredLanguage || base.lastLanguageUsed || '',
+    lastLanguageUsed: base.lastLanguageUsed || '',
     householdSafeContext: base.householdSafeContext || '',
     profiles,
     restrictedMemoryPresent: restrictedCategories.length > 0,
@@ -3037,6 +3079,36 @@ function sanitizeMemoryText(value, maxLength = 500) {
   const text = normalizeOptionalText(value);
   if (!text || hasRestrictedMemoryContent(text)) return '';
   return limitText(text, maxLength);
+}
+
+function normalizeLanguageHint(value) {
+  const text = normalizeOptionalText(value);
+  if (!text) return '';
+  const cleaned = limitText(
+    text
+      .replace(/^(main spoken language|language used|preferred language|language)\s*:\s*/i, '')
+      .replace(/[.!?]+$/g, '')
+      .trim(),
+    80
+  );
+  if (!cleaned || /^(unknown|unclear|not clear|not specified|unspecified|none|n\/a|null)$/i.test(cleaned)) return '';
+  if (hasRestrictedMemoryContent(cleaned)) return '';
+  return cleaned;
+}
+
+function inferLanguageHintFromMessages(messages) {
+  const text = (Array.isArray(messages) ? messages : [])
+    .filter((message) => message?.role === 'patient')
+    .map((message) => message.text || '')
+    .join(' ')
+    .toLowerCase();
+  if (!text) return '';
+  if (/\b(espanol|español|hola|gracias|necesito|medicamento|farmacia|clinica|clínica|dolor)\b/.test(text)) return 'Spanish';
+  if (/\b(français|francais|bonjour|merci|douleur|medecin|médecin|pharmacie)\b/.test(text)) return 'French';
+  if (/\b(kreyol|creole|créole|mwen|bezwen|famasi|dokt[eè])\b/.test(text)) return 'Haitian Creole';
+  if (/\b(swahili|kiswahili|jambo|habari|asante|daktari|dawa|maumivu)\b/.test(text)) return 'Swahili';
+  if (/\b(hello|thanks|thank you|need|pain|medicine|refill|pharmacy|doctor|clinic)\b/.test(text)) return 'English';
+  return '';
 }
 
 function limitText(value, maxLength) {

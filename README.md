@@ -158,6 +158,7 @@ Each export includes:
 
 - `patientSummary` for patient-facing feedback.
 - `providerSummary` when referral, follow-up, appointment, testing, commodities, or urgent handoff is relevant.
+- `languageUsed` for the main spoken language detected in the call.
 - `references` for simulated appointment numbers, referral IDs, commodity pickup numbers, and test request IDs.
 - `messages` with patient, AI, and system transcript events.
 
@@ -179,10 +180,13 @@ The memory record is intentionally conservative. It is keyed to the phone number
   "lastCallAt": "2026-05-14T20:31:03.144Z",
   "identityConfidence": "phone_number_only",
   "sharedPhoneWarning": "This memory is linked to a phone number only. It may represent multiple people and must not be treated as confirmed identity.",
+  "preferredLanguage": "Spanish",
+  "lastLanguageUsed": "Spanish",
   "profiles": [
     {
       "profileId": "profile_1",
       "profileLabel": "adult caller",
+      "preferredLanguage": "Spanish",
       "safeForVoiceContext": "Adult caller has used this line for refill and care navigation questions.",
       "safeContinuityItems": [],
       "openItems": [
@@ -206,6 +210,8 @@ The memory record is intentionally conservative. It is keyed to the phone number
   ]
 }
 ```
+
+At the start of the next call, the Worker passes only the voice-safe memory fields into the Realtime instructions. If `preferredLanguage` or `lastLanguageUsed` is present, the agent may start in that language or use a brief bilingual greeting, then immediately switch if the caller uses a different language.
 
 These memory records are refreshed after each completed call. They do not expire by default; set `CALLER_MEMORY_TTL_DAYS` to a positive number if a deployment needs automatic retention limits.
 
