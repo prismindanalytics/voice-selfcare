@@ -9,6 +9,7 @@ The production runtime is now a fully native Cloudflare deployment:
 - Cloudflare KV for finalized transcript export.
 - OpenAI Realtime API with `gpt-realtime-2`, `marin` voice, and `gpt-4o-transcribe` input transcription by default.
 - Post-call patient/provider summaries and phone-level memory consolidation with `gpt-5.5`.
+- Timed provider/pharmacy option lookup with `gpt-5.5`, capped by `PROVIDER_LOOKUP_TIMEOUT_MS` so voice tool calls fall back quickly instead of leaving long silence.
 
 This system provides health guidance and triage, not medical diagnosis.
 
@@ -255,6 +256,12 @@ curl -X POST \
 
 Durable Object SQL remains the source of truth during the live call. KV is the finalized export layer for easy reads and operational review.
 
+## Provider Lookup
+
+Pickup and testing tools can resolve nearby provider options on the backend. The voice agent collects the patient need and location, then the Worker calls `OPENAI_PROVIDER_MODEL` with a short timeout to return a few real-world plausible options from model knowledge. This is still simulated and unverified, not live search.
+
+If the lookup is slow, unavailable, or the location is too vague, the tool returns a fast fallback asking for one more precise location detail. It should not leave the caller waiting in silence.
+
 ## Environment Reference
 
 | Variable | Required | Default | Description |
@@ -265,6 +272,7 @@ Durable Object SQL remains the source of truth during the live call. KV is the f
 | `OPENAI_REALTIME_VOICE` | no | `marin` | Realtime output voice |
 | `OPENAI_SUMMARY_MODEL` | no | `gpt-5.5` | Post-call summary model |
 | `OPENAI_MEMORY_MODEL` | no | `gpt-5.5` | Post-call phone memory consolidation model |
+| `OPENAI_PROVIDER_MODEL` | no | `gpt-5.5` | Short provider/pharmacy option lookup model |
 | `OPENAI_TRANSCRIPTION_MODEL` | no | `gpt-4o-transcribe` | Patient-side input audio transcription model |
 | `OPENAI_MAX_OUTPUT_TOKENS` | no | `900` | Bounds spoken responses without truncating audio |
 | `OPENAI_WEBHOOK_SECRET` | no | - | Enables Standard Webhooks signature verification |
@@ -272,6 +280,7 @@ Durable Object SQL remains the source of truth during the live call. KV is the f
 | `OPENAI_ACCEPT_SIMPLE` | no | `false` | Use minimal instructions for debugging |
 | `VAD_SILENCE_MS` | no | `1200` | Silence duration before the Realtime model responds |
 | `FINALIZE_IDLE_MS` | no | `120000` | Idle fallback before final transcript export |
+| `PROVIDER_LOOKUP_TIMEOUT_MS` | no | `2500` | Hard timeout for provider lookup during voice tool calls |
 | `CALLER_MEMORY_ENABLED` | no | `true` | Enables hashed phone-level memory refresh after calls |
 | `CALLER_MEMORY_TTL_DAYS` | no | - | Optional memory retention TTL in days; blank means no automatic expiry |
 | `TELEPHONY_CODEC` | no | `g711_ulaw` | SignalWire codec hint |

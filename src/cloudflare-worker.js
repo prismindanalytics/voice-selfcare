@@ -3,10 +3,12 @@ import { DurableObject } from 'cloudflare:workers';
 const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2';
 const DEFAULT_SUMMARY_MODEL = 'gpt-5.5';
 const DEFAULT_MEMORY_MODEL = 'gpt-5.5';
+const DEFAULT_PROVIDER_MODEL = 'gpt-5.5';
 const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
 const DEFAULT_VOICE = 'marin';
 const DEFAULT_MAX_OUTPUT_TOKENS = 900;
 const DEFAULT_FINALIZE_IDLE_MS = 120000;
+const DEFAULT_PROVIDER_LOOKUP_TIMEOUT_MS = 2500;
 const CALLER_MEMORY_PREFIX = 'caller_memory/';
 const INITIAL_GREETING = "Hello, thank you for calling. This is your health advisor. I'm here to help. What health concern can we talk through today?";
 
@@ -57,15 +59,15 @@ This is a generic medical entry point. Operate in three states: information gath
 ## ACTION READINESS
 - Advice/self-care: enough symptom context and red flag screening to give safe guidance.
 - Emergency: red flags or severe symptoms are present. Call handle_emergency, then direct urgent care immediately.
-- Refill/commodity pickup: medicine/item name, eligibility basis such as existing prescription, refill card, or clinic record, remaining supply or last dose, city/neighborhood or address, and a specific real-world plausible nearby pharmacy/clinic chosen from your general knowledge. If eligibility is not established, direct provider review instead of pickup.
-- Diagnostic test: test name or clinical reason, urgency, city/neighborhood or address, and a specific real-world plausible nearby clinic/lab/diagnostic center chosen from your general knowledge.
+- Refill/commodity pickup: medicine/item name, eligibility basis such as existing prescription, refill card, or clinic record, remaining supply or last dose, and city/neighborhood or address. If eligibility is not established, direct provider review instead of pickup.
+- Diagnostic test: test name or clinical reason, urgency, and city/neighborhood or address.
 - Appointment: reason for visit, location or chosen clinic, timing preference, and patient name if available.
 - Referral/provider follow-up: reason, urgency, patient location, and provider type or chosen provider.
 
 ## SIMULATION RULES
 - Appointment numbers, pickup numbers, test request IDs, and provider routing are simulations for this demo, not live verified search results.
-- When choosing a provider, use your general knowledge to suggest a real-world named pharmacy, clinic, lab, hospital, or health center near the patient location, but say the routing is simulated/unverified and must be confirmed before travel.
-- If you cannot name a specific real-world plausible provider, ask for a more specific city, neighborhood, landmark, or address.
+- Do not spend a long spoken turn trying to name providers yourself. Once the needed location and clinical/operational details are known, call the matching action tool. The backend will do a fast simulated provider lookup and return options.
+- If the patient location is too vague for provider routing, ask for a more specific city, neighborhood, landmark, or address.
 - Do not generate simulated IDs unless the relevant action tool runs during the call.
 
 ## REFILL RULES
@@ -78,6 +80,7 @@ This is a generic medical entry point. Operate in three states: information gath
 
 ## LATENCY RULES
 - Keep turns moving. If more information is needed, ask one concrete question. If enough information is available, give concise advice or call the appropriate tool.
+- Do not say "I'm finding a pharmacy" or similar unless you are about to call an action tool. Never fill silence with a long search monologue.
 
 ## VOICE CONSTRAINTS
 - Keep responses brief and natural for phone conversations (2-3 sentences)
@@ -90,6 +93,7 @@ const ACTION_RESPONSE_INSTRUCTIONS = [
   'Answer in one or two short spoken sentences with a calm, caring tone.',
   'Give the patient the next action first.',
   'For simulated refill, pickup, or test logistics, say the specific provider name and address, what simulated reference number to bring, and what to confirm before travel.',
+  'If provider lookup returns no option or times out, say that you could not identify a specific option quickly and ask for one more precise location detail. Do not keep searching silently.',
   'Do not add a long recap.'
 ].join(' ');
 
@@ -487,6 +491,10 @@ export class CallSession extends DurableObject {
   async handleToolCall(toolName, args, toolCallId) {
     const phone = this.getMeta('patient_phone') || 'anonymous';
     let result;
+    this.setMeta('last_tool_started', JSON.stringify({
+      toolName,
+      at: new Date().toISOString()
+    }));
 
     try {
       switch (toolName) {
@@ -503,8 +511,9 @@ export class CallSession extends DurableObject {
 
         case 'find_clinic':
         case 'find_clinics':
-          result = findClinics(args);
-          this.addMessage('system', `Clinic search: ${JSON.stringify(args)}`);
+        case 'resolve_providers':
+          result = await resolveProviderOptions(this.env, args);
+          this.addMessage('system', `Provider options resolved: ${JSON.stringify(result)}`);
           break;
 
         case 'book_slot':
@@ -541,23 +550,27 @@ export class CallSession extends DurableObject {
         case 'request_commodities':
         case 'arrange_commodity_pickup':
         case 'create_pickup':
-          result = requestCommodityPickup(args);
+          result = await requestCommodityPickup(this.env, args);
           this.addMessage('system', `Commodity pickup requested: ${JSON.stringify(result)}`);
-          await this.sendPreferredFollowup(
-            phone,
-            `Simulated commodity pickup request received. Pickup number: ${result.pickup_number}. Go to ${result.provider.name}, ${result.provider.address}.`
-          );
+          if (result.success && result.provider) {
+            await this.sendPreferredFollowup(
+              phone,
+              `Simulated commodity pickup request received. Pickup number: ${result.pickup_number}. Go to ${result.provider.name}, ${result.provider.address}.`
+            );
+          }
           break;
 
         case 'request_test':
         case 'order_test':
         case 'schedule_test':
-          result = requestTest(args);
+          result = await requestTest(this.env, args);
           this.addMessage('system', `Test request created: ${JSON.stringify(result)}`);
-          await this.sendPreferredFollowup(
-            phone,
-            `Simulated test request received. Reference: ${result.test_request_id}. Go to ${result.provider.name}, ${result.provider.address}.`
-          );
+          if (result.success && result.provider) {
+            await this.sendPreferredFollowup(
+              phone,
+              `Simulated test request received. Reference: ${result.test_request_id}. Go to ${result.provider.name}, ${result.provider.address}.`
+            );
+          }
           break;
 
         case 'handle_emergency':
@@ -579,6 +592,12 @@ export class CallSession extends DurableObject {
         message: error.message
       };
     }
+    this.setMeta('last_tool_finished', JSON.stringify({
+      toolName,
+      at: new Date().toISOString(),
+      success: Boolean(result?.success),
+      error: result?.error || ''
+    }));
 
     this.sendRealtime({
       type: 'conversation.item.create',
@@ -2306,7 +2325,7 @@ function realtimeTools() {
     {
       type: 'function',
       name: 'find_clinics',
-      description: 'Record real-world plausible nearby care options chosen from your general knowledge and the patient location. This is simulated/unverified, not live search.',
+      description: 'Resolve a few real-world plausible nearby care options after the patient gives a location. This backend tool uses a short timed provider lookup and returns simulated/unverified options.',
       parameters: {
         type: 'object',
         properties: {
@@ -2328,6 +2347,23 @@ function realtimeTools() {
           }
         },
         required: ['location']
+      }
+    },
+    {
+      type: 'function',
+      name: 'resolve_providers',
+      description: 'Use this once, after location and care need are known, to get a few real-world plausible nearby pharmacies, clinics, labs, hospitals, or health centers. This is simulated/unverified and has a short timeout to avoid long voice silence.',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: { type: 'string' },
+          need: { type: 'string' },
+          provider_type: { type: 'string', enum: ['pharmacy', 'clinic', 'health_center', 'lab', 'hospital', 'diagnostic_center', 'other'] },
+          urgency: { type: 'string', enum: ['routine', 'soon', 'urgent'] },
+          items: { type: 'array', items: { type: 'string' } },
+          tests: { type: 'array', items: { type: 'string' } }
+        },
+        required: ['location', 'need']
       }
     },
     {
@@ -2363,7 +2399,7 @@ function realtimeTools() {
     {
       type: 'function',
       name: 'request_commodities',
-      description: 'Create a simulated pickup request when the patient needs medicines, refills, test kits, wound supplies, contraception, ORS, or other health commodities. For medicine refills, call this only after eligibility is established: medicine/regimen, existing prescription or clinic record/refill card, remaining supply or last dose, and city/neighborhood or address. Choose a specific real-world plausible nearby pharmacy, clinic, HIV clinic, or health center from your general knowledge and the patient location; this is simulated and unverified, not live search. Do not call with placeholder provider names.',
+      description: 'Create a simulated pickup request when the patient needs medicines, refills, test kits, wound supplies, contraception, ORS, or other health commodities. For medicine refills, call this only after eligibility is established: medicine/regimen, existing prescription or clinic record/refill card, remaining supply or last dose, and city/neighborhood or address. If provider_name/provider_address are not supplied, the backend will run a short gpt-5.5 provider lookup and choose the first returned option. Do not spend a long spoken turn searching.',
       parameters: {
         type: 'object',
         properties: {
@@ -2380,13 +2416,13 @@ function realtimeTools() {
           urgency: { type: 'string', enum: ['routine', 'soon', 'urgent'] },
           patient_name: { type: 'string' }
         },
-        required: ['items', 'reason', 'eligibility_basis', 'remaining_supply', 'location', 'provider_name', 'provider_address']
+        required: ['items', 'reason', 'eligibility_basis', 'remaining_supply', 'location']
       }
     },
     {
       type: 'function',
       name: 'request_test',
-      description: 'Create a simulated diagnostic test request only after judging that testing is appropriate and enough details are known: test/reason, urgency, city/neighborhood or address, and a specific real-world plausible nearby clinic/lab/diagnostic center chosen from your general knowledge. This is simulated and unverified, not live search. Do not call with placeholder provider names.',
+      description: 'Create a simulated diagnostic test request only after judging that testing is appropriate and enough details are known: test/reason, urgency, and city/neighborhood or address. If provider_name/provider_address are not supplied, the backend will run a short gpt-5.5 provider lookup and choose the first returned option. This is simulated and unverified, not live search. Do not spend a long spoken turn searching.',
       parameters: {
         type: 'object',
         properties: {
@@ -2401,7 +2437,7 @@ function realtimeTools() {
           urgency: { type: 'string', enum: ['routine', 'soon', 'urgent'] },
           patient_name: { type: 'string' }
         },
-        required: ['tests', 'reason', 'location', 'provider_name', 'provider_address']
+        required: ['tests', 'reason', 'location']
       }
     },
     {
@@ -2420,82 +2456,205 @@ function realtimeTools() {
   ];
 }
 
-function findClinics(args) {
-  const location = args.location || 'your area';
-  const specialty = args.specialty || 'general care';
-  const providedOptions = Array.isArray(args.options) ? args.options : [];
-  if (providedOptions.length > 0) {
-    const clinics = providedOptions.map((option, index) => ({
-      id: generateId(index === 0 ? 'CARE' : 'CAREALT'),
-      name: cleanProviderName(option.name) || 'Specific care option not provided',
-      address: option.address || location,
-      specialty,
-      type: option.type || 'clinic',
-      distance: option.distance || 'nearby',
-      reason: option.reason || '',
-      simulation_notice: 'Simulated care option for demo routing; not a live verified search result.'
-    }));
-    return {
-      success: true,
-      simulation: true,
-      clinics,
-      voiceResponse: `This is a simulation. A plausible nearby option is ${clinics[0].name} at ${clinics[0].address}. Please confirm hours and services before travel.`
-    };
+async function resolveProviderOptions(env, args = {}) {
+  const location = normalizeOptionalText(args.location || args.pickup_location || args.address || args.city);
+  const items = normalizeList(args.items || args.commodities || args.supplies);
+  const tests = normalizeList(args.tests || args.test || args.test_name);
+  const need = normalizeOptionalText(args.need || args.reason) ||
+    [...items, ...tests].join(', ') ||
+    'healthcare access';
+  const providerType = normalizeProviderType(args.provider_type, items.length ? 'pharmacy' : tests.length ? 'clinic' : 'clinic');
+  const timeoutMs = Math.min(numericEnv(env.PROVIDER_LOOKUP_TIMEOUT_MS, DEFAULT_PROVIDER_LOOKUP_TIMEOUT_MS), 7000);
+
+  if (!location || isVagueLocation(location)) {
+    return providerLookupResult({
+      success: false,
+      error: 'more_specific_location_required',
+      location: location || '',
+      need,
+      providerType,
+      timeoutMs,
+      voiceResponse: 'I need a more specific city, neighborhood, landmark, or address before I can suggest nearby options.'
+    });
   }
 
-  return {
-    success: true,
-    simulation: true,
-    clinics: [
-      {
-        id: generateId('CARE'),
-        name: 'Specific public health center not provided',
-        address: location,
-        specialty,
-        type: 'public clinic',
-        distance: 'nearby',
-        simulation_notice: 'Fallback simulated care option; ask the patient for more location detail for a real-world plausible option.'
+  const providedOptions = normalizeProviderOptions(args.options, location, providerType);
+  if (providedOptions.length) {
+    return providerLookupResult({
+      success: true,
+      location,
+      need,
+      providerType,
+      timeoutMs,
+      options: providedOptions,
+      source: 'tool_arguments'
+    });
+  }
+
+  if (!env.OPENAI_API_KEY) {
+    return providerLookupResult({
+      success: false,
+      error: 'provider_lookup_unavailable',
+      location,
+      need,
+      providerType,
+      timeoutMs,
+      voiceResponse: 'I cannot identify a specific nearby option quickly right now. Please share a more precise location, or use the nearest licensed clinic or pharmacy and confirm before travel.'
+    });
+  }
+
+  const started = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort('provider_lookup_timeout'), timeoutMs);
+  const model = env.OPENAI_PROVIDER_MODEL || DEFAULT_PROVIDER_MODEL;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
       },
-      {
-        id: generateId('CAREALT'),
-        name: 'Specific community clinic not provided',
-        address: location,
-        specialty,
-        type: 'community clinic',
-        distance: 'nearby',
-        simulation_notice: 'Fallback simulated care option; ask the patient for more location detail for a real-world plausible option.'
-      }
-    ],
-    voiceResponse: `This is a simulation. I need a more specific city or neighborhood to suggest a real-world plausible nearby option.`
-  };
+      body: JSON.stringify({
+        model,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'Return strict JSON for a healthcare voice-agent provider lookup.',
+              'Use general model knowledge only. Do not claim live search, live availability, current hours, or verified capacity.',
+              'Find 2-3 real-world plausible named options near the supplied location for the care need.',
+              'Each option must include name, address, type, distance, reason, capacity, and nextAction.',
+              'Do not use placeholders such as "nearby pharmacy", "specific clinic not provided", or "AI suggested".',
+              'If the location is too vague to name plausible providers, return {"options":[],"needsMoreLocation":true}.',
+              'Keep output concise.'
+            ].join('\n')
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              location,
+              need,
+              providerType,
+              urgency: args.urgency || 'routine',
+              items,
+              tests
+            })
+          }
+        ]
+      })
+    });
+    clearTimeout(timeout);
+
+    const elapsedMs = Date.now() - started;
+    if (!response.ok) {
+      return providerLookupResult({
+        success: false,
+        error: 'provider_lookup_failed',
+        status: response.status,
+        location,
+        need,
+        providerType,
+        timeoutMs,
+        elapsedMs,
+        voiceResponse: 'I could not identify a specific option quickly. Please share a more precise location or use the nearest licensed provider and confirm before travel.'
+      });
+    }
+
+    const body = await response.json();
+    const parsed = parseJsonObject(contentToText(body?.choices?.[0]?.message?.content));
+    const options = normalizeProviderOptions(parsed?.options || parsed?.providers, location, providerType);
+    if (!options.length) {
+      return providerLookupResult({
+        success: false,
+        error: parsed?.needsMoreLocation ? 'more_specific_location_required' : 'provider_lookup_no_options',
+        location,
+        need,
+        providerType,
+        timeoutMs,
+        elapsedMs,
+        voiceResponse: 'I could not identify a specific nearby option quickly. Please give me a more specific neighborhood, landmark, or address.'
+      });
+    }
+
+    return providerLookupResult({
+      success: true,
+      location,
+      need,
+      providerType,
+      timeoutMs,
+      elapsedMs,
+      source: model,
+      options
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    const elapsedMs = Date.now() - started;
+    const timedOut = error?.name === 'AbortError' || String(error?.message || error).includes('provider_lookup_timeout');
+    return providerLookupResult({
+      success: false,
+      error: timedOut ? 'provider_lookup_timeout' : 'provider_lookup_error',
+      location,
+      need,
+      providerType,
+      timeoutMs,
+      elapsedMs,
+      voiceResponse: timedOut
+        ? 'I could not identify a specific option quickly enough. Please give me a more precise location, or use the nearest licensed provider and confirm before travel.'
+        : 'I could not identify a specific option quickly. Please share a more precise location or use the nearest licensed provider and confirm before travel.'
+    });
+  }
 }
 
-function requestCommodityPickup(args) {
+async function requestCommodityPickup(env, args) {
   const items = normalizeList(args.items || args.commodities || args.supplies);
   const location = args.pickup_location || args.location || 'your area';
-  const providerName = cleanProviderName(args.provider_name);
-  const providerAddress = cleanProviderAddress(args.provider_address);
+  let providerName = cleanProviderName(args.provider_name);
+  let providerAddress = cleanProviderAddress(args.provider_address);
+  let providerOptions = [];
+  let providerLookup = null;
+
+  if (!providerName || !providerAddress) {
+    providerLookup = await resolveProviderOptions(env, {
+      ...args,
+      need: args.reason || `${items.join(', ') || 'medicine'} pickup`,
+      provider_type: args.provider_type || 'pharmacy',
+      items,
+      location
+    });
+    providerOptions = providerLookup.options || [];
+    const selected = providerOptions[0];
+    providerName = selected?.name || '';
+    providerAddress = selected?.address || '';
+  }
+
   if (!providerName || !providerAddress) {
     return {
       success: false,
-      error: 'specific_provider_required',
+      error: providerLookup?.error || 'specific_provider_required',
       missing: [
         !providerName ? 'provider_name' : '',
         !providerAddress ? 'provider_address' : ''
       ].filter(Boolean),
       simulation: true,
-      voiceResponse: 'I need a more specific city, neighborhood, landmark, or address so I can simulate a named nearby pickup location.'
+      provider_lookup: providerLookup || null,
+      voiceResponse: providerLookup?.voiceResponse ||
+        'I need a more specific city, neighborhood, landmark, or address so I can simulate a named nearby pickup location.'
     };
   }
 
   const pickupNumber = generateId('PICK');
+  const selectedProvider = providerOptions[0] || {};
   const provider = {
-    id: generateId('PHARM'),
+    id: selectedProvider.id || generateId('PHARM'),
     name: providerName,
     address: providerAddress,
-    capacity: `${items[0] || 'medicine'} pickup and refill review`,
-    type: args.provider_type || 'pharmacy',
-    distance: args.provider_distance || 'nearby',
+    capacity: selectedProvider.capacity || `${items[0] || 'medicine'} pickup and refill review`,
+    type: selectedProvider.type || args.provider_type || 'pharmacy',
+    distance: selectedProvider.distance || args.provider_distance || 'nearby',
+    reason: selectedProvider.reason || '',
     nextAvailable: args.urgency === 'urgent' ? 'today if available' : 'same or next business day if available',
     simulation_notice: 'Simulated provider routing for demo use; not a live verified search result.'
   };
@@ -2511,6 +2670,8 @@ function requestCommodityPickup(args) {
     remaining_supply: args.remaining_supply || '',
     urgency: args.urgency || 'routine',
     provider,
+    provider_options: providerOptions,
+    provider_lookup: providerLookup,
     pickup: {
       location: `${provider.name}, ${provider.address}`,
       status: 'simulated_request',
@@ -2522,33 +2683,54 @@ function requestCommodityPickup(args) {
   };
 }
 
-function requestTest(args) {
+async function requestTest(env, args) {
   const tests = normalizeList(args.tests || args.test || args.test_name);
   const location = args.location || 'your area';
   const primaryTest = tests[0] || 'recommended test';
-  const providerName = cleanProviderName(args.provider_name);
-  const providerAddress = cleanProviderAddress(args.provider_address);
+  let providerName = cleanProviderName(args.provider_name);
+  let providerAddress = cleanProviderAddress(args.provider_address);
+  let providerOptions = [];
+  let providerLookup = null;
+
+  if (!providerName || !providerAddress) {
+    providerLookup = await resolveProviderOptions(env, {
+      ...args,
+      need: args.reason || `${tests.join(', ') || 'diagnostic'} testing`,
+      provider_type: args.provider_type || 'clinic',
+      tests,
+      location
+    });
+    providerOptions = providerLookup.options || [];
+    const selected = providerOptions[0];
+    providerName = selected?.name || '';
+    providerAddress = selected?.address || '';
+  }
+
   if (!providerName || !providerAddress) {
     return {
       success: false,
-      error: 'specific_provider_required',
+      error: providerLookup?.error || 'specific_provider_required',
       missing: [
         !providerName ? 'provider_name' : '',
         !providerAddress ? 'provider_address' : ''
       ].filter(Boolean),
       simulation: true,
-      voiceResponse: 'I need a more specific city, neighborhood, landmark, or address so I can simulate a named nearby testing location.'
+      provider_lookup: providerLookup || null,
+      voiceResponse: providerLookup?.voiceResponse ||
+        'I need a more specific city, neighborhood, landmark, or address so I can simulate a named nearby testing location.'
     };
   }
 
   const testRequestId = generateId('TEST');
+  const selectedProvider = providerOptions[0] || {};
   const provider = {
-    id: generateId('CLINIC'),
+    id: selectedProvider.id || generateId('CLINIC'),
     name: providerName,
     address: providerAddress,
-    capacity: args.provider_capacity || `${primaryTest} testing`,
-    type: args.provider_type || 'clinic',
-    distance: args.provider_distance || 'nearby',
+    capacity: selectedProvider.capacity || args.provider_capacity || `${primaryTest} testing`,
+    type: selectedProvider.type || args.provider_type || 'clinic',
+    distance: selectedProvider.distance || args.provider_distance || 'nearby',
+    reason: selectedProvider.reason || '',
     nextAvailable: args.urgency === 'urgent' ? 'today if available' : 'next available',
     simulation_notice: 'Simulated provider routing for demo use; not a live verified search result.'
   };
@@ -2562,6 +2744,8 @@ function requestTest(args) {
     reason: args.reason || 'Diagnostic testing request',
     urgency: args.urgency || 'routine',
     provider,
+    provider_options: providerOptions,
+    provider_lookup: providerLookup,
     instructions: 'Simulation only. Confirm testing capacity, eligibility, cost, hours, and sample requirements with the provider.',
     nextAction: `Go to ${provider.name} at ${provider.address}. Bring simulated test request ${testRequestId} and confirm hours, cost, and sample requirements before travel.`,
     voiceResponse: `This is a simulation. I created test request ${testRequestId}. Go to ${provider.name}, about ${provider.distance} away at ${provider.address}, and confirm hours and sample requirements before travel.`
@@ -3485,6 +3669,70 @@ function cleanProviderAddress(value) {
   if (!text) return '';
   if (/\b(your area|patient area|near the patient area|nearby|unknown|not provided|placeholder)\b/i.test(text)) return '';
   return text;
+}
+
+function providerLookupResult(input) {
+  const options = Array.isArray(input.options) ? input.options : [];
+  const selected = options[0] || null;
+  return {
+    success: Boolean(input.success && selected),
+    simulation: true,
+    test_mode: true,
+    error: input.error || '',
+    status: input.status || undefined,
+    location: input.location || '',
+    need: input.need || '',
+    provider_type: input.providerType || '',
+    source: input.source || '',
+    timeout_ms: input.timeoutMs || DEFAULT_PROVIDER_LOOKUP_TIMEOUT_MS,
+    elapsed_ms: input.elapsedMs || 0,
+    options,
+    selected,
+    voiceResponse: input.voiceResponse || (selected
+      ? `This is a simulation. A plausible option is ${selected.name} at ${selected.address}. Please confirm services before travel.`
+      : 'I could not identify a specific nearby option quickly. Please share a more precise location.')
+  };
+}
+
+function normalizeProviderOptions(options, location, fallbackType) {
+  return (Array.isArray(options) ? options : [])
+    .map((option, index) => {
+      if (!option || typeof option !== 'object') return null;
+      const name = cleanProviderName(option.name);
+      const address = cleanProviderAddress(option.address);
+      if (!name || !address) return null;
+      return {
+        id: generateId(index === 0 ? 'CARE' : 'CAREALT'),
+        name: limitText(name, 120),
+        address: limitText(address, 180),
+        type: normalizeProviderType(option.type, fallbackType),
+        distance: limitText(option.distance || 'nearby', 80),
+        reason: limitText(option.reason || '', 180),
+        capacity: limitText(option.capacity || option.services || '', 180),
+        nextAction: limitText(option.nextAction || option.next_action || 'Confirm hours, eligibility, cost, and services before travel.', 180),
+        simulation_notice: `Simulated provider option near ${location}; not a live verified search result.`
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function normalizeProviderType(value, fallback = 'clinic') {
+  const text = String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (['pharmacy', 'clinic', 'health_center', 'lab', 'hospital', 'diagnostic_center', 'other'].includes(text)) return text;
+  if (/pharm/.test(text)) return 'pharmacy';
+  if (/lab/.test(text)) return 'lab';
+  if (/diagnostic|imaging|test/.test(text)) return 'diagnostic_center';
+  if (/hospital/.test(text)) return 'hospital';
+  if (/health/.test(text)) return 'health_center';
+  return fallback;
+}
+
+function isVagueLocation(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return true;
+  if (/^(here|near me|nearby|my area|around me|this area|your area|patient area|traveling|i am traveling)$/.test(text)) return true;
+  return text.length < 3;
 }
 
 function requireEnv(env, name) {
