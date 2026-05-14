@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "voice-selfcare",
+  "main": "src/cloudflare-worker.js",
+  "compatibility_date": "2026-05-14",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CALLER_REGISTRY",
+        "class_name": "CallerRegistry"
+      },
+      {
+        "name": "CALL_SESSIONS",
+        "class_name": "CallSession"
+      }
+    ]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "TRANSCRIPTS",
+      "id": "c4b2f97876d942e4ae48c61842481b50"
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "CallerRegistry",
+        "CallSession"
+      ]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "OPENAI_REALTIME_MODEL": "gpt-realtime-2",
+    "OPENAI_REALTIME_VOICE": "marin",
+    "OPENAI_SUMMARY_MODEL": "gpt-5.5",
+    "OPENAI_MEMORY_MODEL": "gpt-5.5",
+    "OPENAI_TRANSCRIPTION_MODEL": "gpt-4o-transcribe",
+    "OPENAI_MAX_OUTPUT_TOKENS": "900",
+    "OPENAI_ACCEPT_TOOLS": "true",
+    "OPENAI_ACCEPT_SIMPLE": "false",
+    "WEBHOOK_DUMP_BODY": "false",
+    "TELEPHONY_CODEC": "g711_ulaw",
+    "VAD_SILENCE_MS": "1200",
+    "FINALIZE_IDLE_MS": "120000",
+    "CALLER_MEMORY_ENABLED": "true"
+  }
+}
