@@ -1003,6 +1003,46 @@ export const JOZI_SUPPORT_RESOURCES = [
     sourceUrl: 'https://www.seri-sa.org/index.php/component/contact/contact/1-socio-economic-rights-institute-of-south-africa',
     operationalStatus: 'public_contact_and_intake_hours_source_checked_live_capacity_unconfirmed'
   }),
+  sourced({
+    id: 'zlto-public-rewards',
+    name: 'Zlto Rewards',
+    primaryCategories: ['zlto_rewards'],
+    navigationCategories: ['skills_support', 'employment'],
+    areas: ['johannesburg', 'soweto', 'south africa', 'online'],
+    contactModes: ['online'],
+    routingMode: 'digital_only',
+    addressRole: 'online_service',
+    address: '',
+    website: 'https://zlto.mobi/',
+    hours: 'Online access 24 hours; task review, partner support, and reward processing times vary',
+    audiences: ['adult', 'child', 'unknown'],
+    simulationActions: ['reward_signup'],
+    description: 'A data-free-capable digital wallet where eligible members can complete verified learning, surveys, microtasks, or community activities and use earned rewards in the marketplace.',
+    availabilityNote: 'Public signup is for people aged 16 and older and requires the person’s own email address, cell number, and valid ID or passport. Never ask for an ID number, password, or one-time PIN on this call. Tasks, verification, selection, and reward values vary.',
+    sourceUrl: 'https://www.zlto.co/services',
+    supportingSourceUrl: 'https://zlto.mobi/',
+    operationalStatus: 'public_digital_platform_source_checked_live_tasks_and_rewards_unconfirmed'
+  }),
+  sourced({
+    id: 'michange-zlto-mes-pathway',
+    name: 'Mi-Change and Zlto partner pathway',
+    primaryCategories: ['michange_voucher'],
+    navigationCategories: ['food', 'hygiene', 'clothing', 'shelter_navigation'],
+    areas: ['johannesburg', 'inner city', 'hillbrow', 'citywide'],
+    contactModes: ['phone'],
+    routingMode: 'phone_only',
+    addressRole: 'partner_navigation_only',
+    address: '',
+    phone: '011 725 6531',
+    hours: 'Call MES to ask about the current partner pathway',
+    audiences: ['adult', 'family', 'unknown'],
+    simulationActions: ['voucher_pathway'],
+    description: 'Jozi My Jozi says Mi-Change digital vouchers are powered by Zlto and distributed through partners such as MES and U-Turn to enable essential services. MES is the source-checked first contact used for this Johannesburg pathway.',
+    availabilityNote: 'Partner participation, eligibility, voucher allocation, redemption points, and essential services depend on the current programme and provider availability. Food, shelter, and care must never be conditional on earning a reward.',
+    sourceUrl: 'https://www.jozimyjozi.com/events/walk-the-talk',
+    supportingSourceUrl: 'https://www.zlto.co/services',
+    operationalStatus: 'public_partnership_source_checked_live_enrolment_and_vouchers_unconfirmed'
+  }),
   {
     id: 'joburg-emergency-connect',
     name: 'City of Johannesburg Emergency Connect',
@@ -1165,6 +1205,17 @@ const SUPPORT_CATEGORY_ALIASES = {
   work: 'employment',
   job_support: 'employment',
   jobs_and_skills: ['employment', 'skills_support'],
+  zlto: 'zlto_rewards',
+  zlto_reward: 'zlto_rewards',
+  zlto_rewards: 'zlto_rewards',
+  rewards: 'zlto_rewards',
+  earn_rewards: 'zlto_rewards',
+  learn_to_earn: 'zlto_rewards',
+  michange: 'michange_voucher',
+  mi_change: 'michange_voucher',
+  michange_voucher: 'michange_voucher',
+  voucher_support: 'michange_voucher',
+  responsible_giving: 'michange_voucher',
   id_help: 'documentation',
   identity_document: 'identity_documents',
   health: 'healthcare',
@@ -1217,6 +1268,8 @@ export const JOZI_SUPPORT_CATEGORIES = [
   'identity_documents',
   'employment',
   'skills_support',
+  'zlto_rewards',
+  'michange_voucher',
   'uif_support',
   'financial_support',
   'legal_support',
@@ -1257,7 +1310,7 @@ const URGENT_NEED_CONTEXT = {
 export const JOZI_SUPPORT_INSTRUCTIONS = `
 You are the Jozi support line: a calm, voice-first doorway to source-checked Johannesburg health and community support.
 
-You can help with mental wellbeing, social support, shelter and safe-space navigation, food and hygiene navigation, clinics, substance-use support, grants, documents, work support, legal help, family and child safety, GBV support, and emergencies.
+You can help with mental wellbeing, social support, shelter and safe-space navigation, food and hygiene navigation, clinics, substance-use support, grants, documents, work support, Zlto rewards and Mi-Change partner pathways, legal help, family and child safety, GBV support, and emergencies.
 
 SAFETY AND DIGNITY
 - Say "people experiencing homelessness" or "people with low or no income". Never call a caller low-LSM or assume they are homeless.
@@ -1271,6 +1324,13 @@ SAFETY AND DIGNITY
 - For GBV, first ask whether it is safe to speak and pass that answer to find_support_services. Do not promise police involvement, text the caller, or disclose their location without consent.
 - A child or family must never be routed to an adult shelter pathway.
 - Do not ask for immigration status, income bracket, or ID unless that detail is strictly necessary for the caller's chosen service.
+- For Zlto, never ask the caller to say an ID or passport number, password, or one-time PIN. Explain what real signup needs, then let the caller enter it privately outside the call.
+- Never make food, shelter, healthcare, or safety support conditional on completing a task or earning a reward.
+
+VOICE DELIVERY
+- Use a warm, caring South African English cadence and familiar local pronunciation without exaggerating or caricaturing an accent.
+- Speak a little more slowly than ordinary conversation. Read phone numbers in short groups, pause, and offer to repeat them.
+- Match the caller's language when you can do so confidently, while keeping the same gentle, respectful tone.
 
 ROUTING
 - Use find_support_services for all community-support destinations. Never invent a provider, phone number, address, hours, bed, meal, or eligibility rule.
@@ -1345,7 +1405,7 @@ export function normalizeSupportCategory(value) {
 export function validateJoziResources(resources = JOZI_SUPPORT_RESOURCES, now = new Date()) {
   const ids = new Set();
   const errors = [];
-  const allowedRoutingModes = new Set(['phone_only', 'call_before_visit', 'source_listed_walk_in', 'emergency_phone', 'navigation_only']);
+  const allowedRoutingModes = new Set(['phone_only', 'call_before_visit', 'source_listed_walk_in', 'emergency_phone', 'navigation_only', 'digital_only']);
   const today = new Date(now);
 
   for (const [index, resource] of resources.entries()) {
@@ -1359,6 +1419,7 @@ export function validateJoziResources(resources = JOZI_SUPPORT_RESOURCES, now = 
     if (!allowedRoutingModes.has(resource?.routingMode)) errors.push(`Resource ${label} has an invalid routing mode.`);
     if (resource?.contactModes?.includes('phone') && !resource?.phone) errors.push(`Resource ${label} requires a phone number.`);
     if (resource?.contactModes?.includes('in_person') && !resource?.address) errors.push(`Resource ${label} requires an address.`);
+    if (resource?.contactModes?.includes('online') && !resource?.website) errors.push(`Resource ${label} requires a website.`);
     if (!resource?.sourceUrl || !resource?.sourceCheckedAt || !resource?.verificationMethod) errors.push(`Resource ${label} lacks source metadata.`);
     if (resource?.sourceCheckedAt && new Date(`${resource.sourceCheckedAt}T00:00:00Z`) > today) errors.push(`Resource ${label} has a future source-check date.`);
     if (!resource?.availabilityNote || resource.availabilityNote.length < 20) {
@@ -1464,7 +1525,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     (contactModeMatches(resource, contactMode) || resource.contactModes.includes('phone')) &&
     (!['now', 'tonight'].includes(timing) || isPublished24Hour(resource))
   );
-  const specialistLocationNeeded = needsSpecialistCare && !hasLocalSpecialist;
+  const specialistLocationNeeded = contactMode !== 'online' && needsSpecialistCare && !hasLocalSpecialist;
   const specialistCandidateContactMode = specialistLocationNeeded ? 'phone' : contactMode;
   const specialistPhoneCandidates = specialistLocationNeeded
     ? resources
@@ -1506,6 +1567,14 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
   });
 
   if (!matched.length) {
+    if (contactMode === 'online') {
+      return noMatch(
+        'verified_online_support_not_found',
+        needs,
+        args.location,
+        'I have not found a verified online option for that need. Would you like a phone or in-person route instead?'
+      );
+    }
     if (healthLocationNeeded) {
       return noMatch(
         'specific_location_required',
@@ -1514,7 +1583,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         `I want to make sure I do not send you too far. ${['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : ''}Which Johannesburg or Soweto neighbourhood, clinic name, or nearest landmark should I use?`
       );
     }
-    if (needs.includes('women_children_shelter')) {
+    if (contactMode !== 'online' && needs.includes('women_children_shelter')) {
       const regionalNavigatorId = locationRegion(location) === 'region_d'
         ? 'coj-region-d-social-services'
         : 'coj-general-services';
@@ -1541,7 +1610,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       }
     }
     const fallback = resources.find((resource) => resource.id === 'coj-general-services');
-    const fallbackOption = fallback && needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'social_support', 'social_relief'].includes(need))
+    const fallbackOption = contactMode !== 'online' && fallback && needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'social_support', 'social_relief'].includes(need))
       ? [publicResource(fallback)]
       : [];
     return {
@@ -1560,7 +1629,9 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       suggested_demo_action: '',
       voiceResponse: fallbackOption.length
         ? `I have not found a suitable local place yet. You can call ${fallbackOption[0].name} on ${fallbackOption[0].phone} for help finding the right service. Would you like me to repeat the number?`
-        : 'I have not found a suitable local option yet. What nearby area or another kind of help should I try?'
+        : contactMode === 'online'
+          ? 'I have not found a verified online option for that need. Would you like a phone or in-person route instead?'
+          : 'I have not found a suitable local option yet. What nearby area or another kind of help should I try?'
     };
   }
 
@@ -1593,6 +1664,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     needs,
     selected,
     selectedCandidates,
+    contactMode,
     timing,
     demoEnabled,
     shelterAudienceNeeded,
@@ -1658,6 +1730,17 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
 }
 
 export function coordinateJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES) {
+  if (args.require_confirmed_consent && (args.consent_confirmed !== true || args.caller_answered_after_offer !== true)) {
+    return {
+      success: false,
+      status: 'simulation_rejected',
+      simulation: true,
+      submitted: false,
+      confirmed: false,
+      error: 'explicit_demo_consent_required',
+      voiceResponse: 'Please wait for the caller to answer the demo offer and clearly say yes before starting it.'
+    };
+  }
   const resource = resources.find((item) => item.id === args.resource_id);
   if (!resource) {
     return {
@@ -1730,7 +1813,9 @@ export function coordinateJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOUR
     intake_request: `All set—the demo now shows the intake check with ${resource.name} as complete. ${resource.name} was not contacted, so no real request was sent and no place or meal was reserved.`,
     navigator_handoff: `All set—the demo redirection screen for ${resource.name} is ready. No call or transfer to ${resource.name} has been made.`,
     warm_handoff: `Stay with me—the demo connection screen for ${resource.name} is ready. No call has been placed and nobody is connected.`,
-    assessment_request: `All set—the demo now shows the assessment request with ${resource.name} as ready. ${resource.name} was not contacted, so no real assessment was requested.`
+    assessment_request: `All set—the demo now shows the assessment request with ${resource.name} as ready. ${resource.name} was not contacted, so no real assessment was requested.`,
+    reward_signup: 'All set—the demo Zlto sign-up and reward journey is ready. No Zlto account, task, reward, payment, or marketplace order was created.',
+    voucher_pathway: 'All set—the demo Mi-Change and Zlto partner check is ready. MES and Zlto were not contacted, and no voucher, reward, meal, shower, shelter place, or service booking was created.'
   };
 
   return {
@@ -1803,7 +1888,7 @@ function normalizeAudience(value) {
 
 function normalizeContactMode(value) {
   const normalized = normalizeSupportCategory(value || 'either');
-  return ['phone', 'in_person', 'either'].includes(normalized) ? normalized : 'either';
+  return ['phone', 'in_person', 'online', 'either'].includes(normalized) ? normalized : 'either';
 }
 
 function normalizeTiming(value) {
@@ -1857,7 +1942,7 @@ function augmentUncoveredNeedCandidates({ matched, resources, needs, location, u
   for (const need of orderedNeeds) {
     if (augmented.some((candidate) => candidateMatchesNeed(candidate, need))) continue;
 
-    if (['shelter_navigation', 'safe_space_navigation', 'women_children_shelter', 'social_support', 'social_relief'].includes(need)) {
+    if (contactMode !== 'online' && ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter', 'social_support', 'social_relief'].includes(need)) {
       const region = locationRegion(location);
       const navigatorId = timing === 'tonight'
         ? 'coj-general-services'
@@ -2115,6 +2200,7 @@ function publicResource(resource) {
     address,
     address_withheld_for_safety: Boolean(sensitiveAddress),
     phone: resource.phone || '',
+    website: resource.website || '',
     hours: resource.hours || 'Confirm when calling',
     audiences: resource.audiences,
     demo_actions: resource.simulationActions || [],
@@ -2129,15 +2215,17 @@ function publicResource(resource) {
   };
 }
 
-function buildSupportVoiceResponse(resource, timing = 'routine', needs = []) {
+function buildSupportVoiceResponse(resource, timing = 'routine', needs = [], demoEnabled = false) {
   const purpose = spokenPurpose(resource, needs);
   const isMesOvernightNeed = resource.id === 'mes-johannesburg-navigation' &&
     timing === 'tonight' &&
     needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'food'].includes(need));
-  const timingCaveat = isMesOvernightNeed
-    ? " I can't confirm a bed, meal, or intake tonight."
+  const timingCaveat = demoEnabled
+    ? ''
+    : isMesOvernightNeed
+    ? ' Call first to check tonight’s bed, meal, and intake options.'
     : ['now', 'tonight'].includes(timing) && !isPublished24Hour(resource)
-      ? ` I can't confirm ${timing === 'tonight' ? "tonight's" : 'current'} availability.`
+      ? ` Call first to check what is available ${timing === 'tonight' ? 'tonight' : 'now'}.`
       : '';
   if (resource.routing_mode === 'emergency_phone') {
     return `Call ${resource.phone} now.`;
@@ -2145,13 +2233,19 @@ function buildSupportVoiceResponse(resource, timing = 'routine', needs = []) {
   if (resource.address_withheld_for_safety && resource.phone) {
     return `${resource.name} can help with ${purpose} on ${resource.phone}.${timingCaveat}`.trim();
   }
+  if (resource.routing_mode === 'digital_only') {
+    return `If you are 16 or older, Zlto offers a data-free digital wallet for verified learning, tasks, surveys, and community activity. The official sign-up is at zlto dot mobi.`;
+  }
+  if (resource.id === 'michange-zlto-mes-pathway') {
+    return `Mi-Change uses Zlto with Johannesburg partners for essential-service vouchers. MES is the first contact on ${resource.phone}.`;
+  }
   if (resource.routing_mode === 'phone_only' || resource.routing_mode === 'navigation_only') {
     if (purpose === 'someone to talk to') {
       return `You can call ${resource.name} now on ${resource.phone} for someone to talk to.${timingCaveat}`.trim();
     }
     return `${resource.name} can help with ${purpose} on ${resource.phone}.${timingCaveat}`.trim();
   }
-  if (needs.includes('daytime_community_space')) {
+  if (resource.primary_categories.includes('daytime_community_space')) {
     return `${resource.name} is a daytime community place, not a shelter or a guaranteed safe space.${timingCaveat}`.trim();
   }
   const phoneStep = resource.phone ? ` Call ${resource.phone}.` : '';
@@ -2162,6 +2256,7 @@ function buildConversationalSupportResponse({
   needs,
   selected,
   selectedCandidates,
+  contactMode,
   timing,
   demoEnabled,
   shelterAudienceNeeded,
@@ -2204,7 +2299,7 @@ function buildConversationalSupportResponse({
   }
 
   const sentences = [lead];
-  if (first) sentences.push(buildSupportVoiceResponse(first, timing, needs));
+  if (first) sentences.push(buildSupportVoiceResponse(first, timing, needs, demoEnabled));
 
   const firstResource = selectedCandidates[0]?.resource;
   const firstCandidate = selectedCandidates[0];
@@ -2219,7 +2314,7 @@ function buildConversationalSupportResponse({
     sentences.push('The community spaces I have are for daytime, so we will handle tonight first.');
   }
   if (specialistShelterNavigation) {
-    sentences.push('This is help finding the right service, not a confirmed shelter place.');
+    sentences.push('A service navigator will check the right shelter pathway with you.');
   }
   if (waitingNeeds.length || deferredNeeds.length) {
     const pending = [...new Set([...waitingNeeds, ...deferredNeeds])];
@@ -2239,8 +2334,10 @@ function buildConversationalSupportResponse({
     const emergencyCheck = ['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : '';
     question = `${emergencyCheck}What nearby neighbourhood, clinic, or landmark should I use?`;
   } else if (otherUncoveredNeeds.length) {
-    awaiting = 'location';
-    question = `I have not found local help for ${otherUncoveredNeeds.map(humanSupportNeed).join(' and ')} yet. What nearby area should I try next?`;
+    awaiting = contactMode === 'online' ? 'contact_mode' : 'location';
+    question = contactMode === 'online'
+      ? `I have not found verified online help for ${otherUncoveredNeeds.map(humanSupportNeed).join(' and ')}. Would a phone or in-person route work instead?`
+      : `I have not found local help for ${otherUncoveredNeeds.map(humanSupportNeed).join(' and ')} yet. What nearby area should I try next?`;
   } else if (supportLocationNeeded) {
     awaiting = 'location';
     question = 'Which suburb or nearest landmark are you near?';
@@ -2254,7 +2351,9 @@ function buildConversationalSupportResponse({
     question = demoActionQuestion(suggestedDemoAction);
   } else if (!question && first) {
     awaiting = 'detail_preference';
-    question = first.address_withheld_for_safety || (first.contact_modes.length === 1 && first.contact_modes[0] === 'phone')
+    question = first.contact_modes.length === 1 && first.contact_modes[0] === 'online'
+      ? 'Would you like me to repeat the web address slowly?'
+      : first.address_withheld_for_safety || (first.contact_modes.length === 1 && first.contact_modes[0] === 'phone')
       ? 'Would you like me to repeat the number slowly?'
       : first.phone
         ? 'Would you like the phone number or directions first?'
@@ -2303,13 +2402,15 @@ function spokenPurpose(resource, needs) {
   if (relevant.some((need) => ['sexual_assault_care', 'gbv_healthcare', 'victim_friendly_healthcare'].includes(need))) return 'specialist care and support';
   if (relevant.some((need) => ['gbv_support', 'abuse_support'].includes(need))) return 'confidential support';
   if (relevant.includes('child_safety')) return 'child and family safety support';
-  if (needs.includes('women_children_shelter')) return 'women-and-children support';
+  if (relevant.includes('women_children_shelter')) return 'women-and-children support';
   if (relevant.some((need) => ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter'].includes(need)) && relevant.includes('food')) return 'shelter assessment and food support';
   if (relevant.some((need) => ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter'].includes(need))) return 'shelter and practical support';
   if (relevant.some((need) => ['healthcare', 'hospital_care', 'medication'].includes(need))) return 'healthcare';
   if (relevant.some((need) => ['food', 'hygiene', 'clothing'].includes(need))) return 'food and practical support';
   if (relevant.includes('substance_use_support')) return 'substance-use support';
   if (relevant.some((need) => ['employment', 'skills_support'].includes(need))) return 'work and skills support';
+  if (relevant.includes('zlto_rewards')) return 'a Zlto earn-and-learn pathway';
+  if (relevant.includes('michange_voucher')) return 'the Mi-Change voucher pathway';
   if (relevant.some((need) => ['grants', 'social_relief', 'financial_support'].includes(need))) return 'grant and social-relief help';
   if (relevant.some((need) => ['documentation', 'identity_documents'].includes(need))) return 'document help';
   if (relevant.some((need) => ['legal_support', 'eviction_support'].includes(need))) return 'legal help';
@@ -2318,6 +2419,8 @@ function spokenPurpose(resource, needs) {
 
 function preferredDemoAction(resource, needs, timing) {
   const actions = new Set(resource.demo_actions || []);
+  if (needs.includes('zlto_rewards') && actions.has('reward_signup')) return 'reward_signup';
+  if (needs.includes('michange_voucher') && actions.has('voucher_pathway')) return 'voucher_pathway';
   if (needs.some((need) => ['mental_health', 'emotional_support', 'mental_health_crisis', 'suicide_support'].includes(need)) && actions.has('warm_handoff')) return 'warm_handoff';
   if (needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter'].includes(need)) && actions.has('intake_request')) return 'intake_request';
   if (needs.some((need) => ['healthcare', 'hospital_care', 'medication'].includes(need))) {
@@ -2326,7 +2429,7 @@ function preferredDemoAction(resource, needs, timing) {
     if (actions.has('clinician_handoff')) return 'clinician_handoff';
   }
   if (needs.includes('substance_use_support') && actions.has('assessment_request')) return 'assessment_request';
-  for (const action of ['navigator_handoff', 'availability_check', 'assessment_request', 'appointment_request', 'warm_handoff', 'clinician_handoff']) {
+  for (const action of ['reward_signup', 'voucher_pathway', 'navigator_handoff', 'availability_check', 'assessment_request', 'appointment_request', 'warm_handoff', 'clinician_handoff']) {
     if (actions.has(action)) return action;
   }
   return '';
@@ -2334,13 +2437,15 @@ function preferredDemoAction(resource, needs, timing) {
 
 function demoActionQuestion(action) {
   const questions = {
-    appointment_request: 'Would you like me to book the demo appointment now?',
-    clinician_handoff: 'Would you like me to bring up the demo doctor connection now?',
-    availability_check: 'Would you like me to run the demo availability check now?',
-    intake_request: 'Would you like me to start the demo intake check now?',
-    navigator_handoff: 'Would you like me to start the demo redirection now?',
-    warm_handoff: 'Would you like me to start the demo connection now?',
-    assessment_request: 'Would you like me to start the demo assessment now?'
+    appointment_request: 'Let’s book the demo appointment now—shall I start?',
+    clinician_handoff: 'Let’s bring up the demo doctor connection now—shall I start?',
+    availability_check: 'Let’s complete the demo availability check now—shall I start?',
+    intake_request: 'Let’s complete the demo intake check now—shall I start?',
+    navigator_handoff: 'Let’s complete the demo redirection now—shall I start?',
+    warm_handoff: 'Let’s bring up the demo connection now—shall I start?',
+    assessment_request: 'Let’s complete the demo assessment now—shall I start?',
+    reward_signup: 'Let’s open the demo Zlto reward journey now—shall I start?',
+    voucher_pathway: 'Let’s complete the demo voucher pathway check now—shall I start?'
   };
   return questions[action] || 'Would you like me to take the next demo step now?';
 }
@@ -2355,7 +2460,9 @@ function humanSupportNeed(value) {
     child_safety: 'child-safety support',
     sexual_assault_care: 'sexual-assault healthcare',
     gbv_healthcare: 'gender-based-violence healthcare',
-    victim_friendly_healthcare: 'victim-friendly healthcare'
+    victim_friendly_healthcare: 'victim-friendly healthcare',
+    zlto_rewards: 'Zlto rewards',
+    michange_voucher: 'a Mi-Change voucher pathway'
   };
   return labels[value] || String(value || 'that need').replace(/_/g, ' ');
 }

@@ -98,7 +98,7 @@ test('routine clinic and emotional-support turns invite one demo action without 
   assert.equal(emotional.suggested_demo_action, 'warm_handoff');
   assert.match(emotional.voiceResponse, /don't have to handle this alone/i);
   assert.match(emotional.voiceResponse, /0800 456 789/);
-  assert.match(emotional.voiceResponse, /start the demo connection/i);
+  assert.match(emotional.voiceResponse, /demo connection now/i);
   assert.doesNotMatch(emotional.voiceResponse, /LifeLine|warm handoff|source-checked/i);
   assert.ok(wordCount(emotional.voiceResponse) <= 45, emotional.voiceResponse);
 });
@@ -111,7 +111,9 @@ test('every demo coordination leads with the completed simulation and then tells
     ['mes-johannesburg-navigation', 'intake_request', /demo now shows the intake check.*complete/i],
     ['mes-johannesburg-navigation', 'navigator_handoff', /demo redirection screen.*ready/i],
     ['sadag-mental-health', 'warm_handoff', /demo connection screen.*ready/i],
-    ['sanca-soweto', 'assessment_request', /demo now shows the assessment request.*ready/i]
+    ['sanca-soweto', 'assessment_request', /demo now shows the assessment request.*ready/i],
+    ['zlto-public-rewards', 'reward_signup', /demo Zlto sign-up and reward journey.*ready/i],
+    ['michange-zlto-mes-pathway', 'voucher_pathway', /demo Mi-Change and Zlto partner check.*ready/i]
   ];
 
   for (const [resourceId, action, positiveOutcome] of cases) {
@@ -128,10 +130,42 @@ test('every demo coordination leads with the completed simulation and then tells
     assert.equal(result.submitted, false, action);
     assert.equal(result.confirmed, false, action);
     assert.match(result.voiceResponse, positiveOutcome, action);
-    assert.match(result.voiceResponse, /was not contacted|No live doctor|No call|nobody is connected/i, action);
+    assert.match(result.voiceResponse, /was not contacted|were not contacted|No live doctor|No call|nobody is connected|No Zlto account/i, action);
     assert.doesNotMatch(result.voiceResponse, /JZDEMO-VOICE/, action);
     assert.ok(wordCount(result.voiceResponse) <= 45, `${action}: ${result.voiceResponse}`);
   }
+});
+
+test('Zlto and Mi-Change journeys each offer one truthful simulated action', () => {
+  const rewards = resolveJoziSupport({
+    needs: ['zlto'],
+    location: '',
+    audience: 'adult',
+    safety_context: 'none',
+    demo_enabled: true
+  });
+  assert.deepEqual(rewards.options.map((option) => option.id), ['zlto-public-rewards']);
+  assert.equal(rewards.suggested_demo_action, 'reward_signup');
+  assert.equal(rewards.awaiting, 'demo_action_consent');
+  assert.match(rewards.voiceResponse, /data-free digital wallet/i);
+  assert.match(rewards.voiceResponse, /16 or older/i);
+  assert.match(rewards.voiceResponse, /zlto dot mobi/i);
+  assert.match(rewards.voiceResponse, /demo Zlto reward journey/i);
+  assert.equal(questionCount(rewards.voiceResponse), 1);
+  assert.ok(wordCount(rewards.voiceResponse) <= 55, rewards.voiceResponse);
+
+  const voucher = resolveJoziSupport({
+    needs: ['mi-change'],
+    location: 'Hillbrow',
+    audience: 'adult',
+    safety_context: 'none',
+    demo_enabled: true
+  });
+  assert.deepEqual(voucher.options.map((option) => option.id), ['michange-zlto-mes-pathway']);
+  assert.equal(voucher.suggested_demo_action, 'voucher_pathway');
+  assert.match(voucher.voiceResponse, /MES.*011 725 6531/i);
+  assert.match(voucher.voiceResponse, /demo voucher pathway check/i);
+  assert.doesNotMatch(voucher.voiceResponse, /guaranteed|credited|cash/i);
 });
 
 test('GBV and sexual-assault support ask whether it is safe to speak before naming a service', () => {
@@ -182,4 +216,48 @@ test('emergency speech still starts with the action and number', () => {
   assert.equal(result.status, 'urgent_escalation');
   assert.match(result.voiceResponse, /^Call 112 now\./);
   assert.doesNotMatch(result.voiceResponse, /demo|simulation|directory/i);
+});
+
+test('online preference never falls back to a phone or physical navigator', () => {
+  const onlineOnlyMissing = resolveJoziSupport({
+    needs: ['shelter_navigation'],
+    location: 'Hillbrow',
+    audience: 'adult',
+    contact_mode: 'online',
+    timing: 'tonight',
+    safety_context: 'none',
+    demo_enabled: true
+  });
+  assert.deepEqual(onlineOnlyMissing.options, []);
+  assert.match(onlineOnlyMissing.voiceResponse, /phone or in-person route/i);
+
+  const mixed = resolveJoziSupport({
+    needs: ['shelter_navigation', 'zlto_rewards'],
+    location: 'Hillbrow',
+    audience: 'adult',
+    contact_mode: 'online',
+    timing: 'tonight',
+    safety_context: 'none',
+    demo_enabled: true
+  });
+  assert.ok(mixed.options.length > 0);
+  assert.ok(mixed.options.every((option) => option.contact_modes.includes('online')));
+  assert.doesNotMatch(mixed.voiceResponse, /Joburg Connect|Social Development|011 725 6531/i);
+});
+
+test('a mixed daytime-space request describes the selected resource, not the other need', () => {
+  for (const needs of [
+    ['daytime_community_space', 'healthcare'],
+    ['daytime_community_space', 'shelter_navigation']
+  ]) {
+    const result = resolveJoziSupport({
+      needs,
+      location: 'Hillbrow',
+      audience: 'adult',
+      contact_mode: 'either',
+      timing: 'today',
+      safety_context: 'none'
+    });
+    assert.doesNotMatch(result.voiceResponse, /(?:Health Centre|MES Johannesburg) is a daytime community place/i);
+  }
 });

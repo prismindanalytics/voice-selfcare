@@ -1,17 +1,19 @@
 # Jozi support demo journeys
 
-These journeys are designed for a knowledgeable Johannesburg homelessness and social-support audience. The line acts as a voice doorway into existing services. It does not replace a social worker, determine shelter eligibility, or know live capacity.
+These journeys are designed for a knowledgeable Johannesburg homelessness and social-support audience. The line acts as a voice doorway into existing services, then completes one clearly labelled simulated request, booking, check, or connection so the audience can see the future workflow.
 
 ## What is real and what is simulated
 
 - Real: the organisations, public telephone numbers, listed service addresses, published service descriptions, and emergency numbers returned by the directory.
 - Source-checked, not live-checked: hours, queues, intake, eligibility, capacity, meals, shelter places, and programme availability.
 - Simulated: every on-screen reference, appointment, availability check, intake request, assessment request, clinician handoff, and warm transfer.
-- The line does not lead with a disclaimer. At the moment it completes a demo action, it names the positive demo outcome first and then says plainly that the demonstration is not connected to the external service.
+- The line does not lead with a disclaimer or a negative statement. It recommends one caring next step and asks to complete one simulated action.
+- At the moment it completes that action, it names the positive demo outcome first and then says plainly that the demonstration is not connected to the external service.
+- Emergency journeys are the exception: the line gives real emergency numbers immediately and never simulates dispatching an ambulance, police officer, or crisis responder.
 
 ## Common opening
 
-**Agent:** “Hello, you’ve reached the Jozi health and support demo line. I’m here to help. What would help most right now?”
+**Agent:** “Hello, you’ve reached the Jozi support demo line. I’m here to help. What would help most right now?”
 
 The line asks only what changes the route: immediate danger or medical red flags, nearest suburb or landmark, adult/child/family, relevant mobility or access needs, and whether it is safe to speak or share an address. It never needs an exact sleeping location.
 
@@ -24,7 +26,7 @@ The line asks only what changes the route: immediate danger or medical red flags
 1. Ask one safety question: “Are you in immediate danger, badly hurt, or feeling that you may harm yourself?”
 2. Ask whether the caller is an adult alone, with children, or has a mobility/access need.
 3. For an adult with no immediate danger, recommend **MES Johannesburg** as one step that can cover the shelter assessment and food-support request. Give the phone number immediately; keep the address for later or for a caller who asks for it.
-4. Say: “Okay, let’s sort out tonight first, then your practical needs. MES Johannesburg is the best first place to try for shelter assessment and food support. Call 011 725 6531. I can’t confirm a bed, meal, or intake tonight. Would you like me to start the demo intake check now?”
+4. Say: “Okay, let’s sort out tonight first, then your practical needs. MES Johannesburg is the best first place to try for shelter assessment and food support. Call 011 725 6531. Let’s complete the demo intake check now—shall I start?”
 5. Pause. If the caller agrees, run the demo intake action. Give directions afterward only if useful, one detail at a time. Do not require an app, data, or text.
 
 **Demo coordination:** run an `intake_request` only after the caller agrees to MES.
@@ -39,7 +41,7 @@ The line asks only what changes the route: immediate danger or medical red flags
 
 1. Confirm once that there is no current plan, means, recent self-harm, or inability to stay safe.
 2. Recommend **SADAG Cipla Mental Health Helpline, 0800 456 789, 24 hours** first. Keep **LifeLine National Crisis Line, 0861 322 322** for later if SADAG is declined or unavailable.
-3. Keep the spoken response caring and short: “I’m glad you told me. You don’t have to handle this alone. SADAG can talk with you now on 0800 456 789. Would you like me to start the demo connection?”
+3. Keep the spoken response caring and short: “I’m glad you told me. You don’t have to handle this alone. You can call SADAG now on 0800 456 789. Let’s bring up the demo connection now—shall I start?”
 
 **Demo coordination:** a `warm_handoff` may show the future experience.
 
@@ -70,6 +72,8 @@ The line asks only what changes the route: immediate danger or medical red flags
 3. In the CBD, return **Johannesburg City Library**, Beyers Naudé Square, **011 407 7703** or **061 438 0153**.
 4. In Orlando, return **Orlando East Library**, 6544 Mooki Street, **011 935 1040**.
 5. Say explicitly: “This is a daytime civic venue, not a shelter, social-work intake, or guaranteed safe space. Please call to confirm it is open and that the programme or public area you need is available.”
+
+**Demo coordination:** show a `navigator_handoff` to the selected venue after the caller agrees. The result says the demo redirection screen is ready and that no call or transfer occurred.
 
 ## Journey 5 — sick near Joubert Park
 
@@ -104,6 +108,8 @@ The line asks only what changes the route: immediate danger or medical red flags
 
 **Pass condition:** the voice line always withholds sensitive shelter/GBV addresses and gives the public telephone route first; nothing is texted.
 
+**Demo coordination:** when there is no immediate danger and it is safe to speak, offer one simulated connection to the caller’s chosen support line. Never simulate police or emergency dispatch.
+
 ## Journey 7 — child or family in danger
 
 **Caller:** “I am 15 and cannot go home tonight.”
@@ -115,6 +121,8 @@ The line asks only what changes the route: immediate danger or medical red flags
 3. Inner-city follow-up may include **Johannesburg Child Welfare**, 41 Fox Street, Ferreirasdorp, **011 298 8500**, call first.
 4. Soweto follow-up may include **Childline Gauteng Pfunanani Centre**, Chris Hani Baragwanath Hospital, **011 938 8745**, call first.
 5. Never route the child to MES’s adult pathway or an adult shelter.
+
+**Demo coordination:** after the child or caring adult chooses Childline, show one simulated connection. The result must say no call was placed and nobody is connected.
 
 For a woman with children, the line can ask whether it is safe to share a shelter address, then offer **Frida Hartley Shelter, 011 648 6005** or, when eligibility fits, **Bienvenu Shelter, 011 624 2915**. Capacity and admission are always call-first and unconfirmed.
 
@@ -128,7 +136,7 @@ For a woman with children, the line can ask whether it is safe to share a shelte
 2. Return **SANCA Soweto**, 827 Elias Motsoaledi Road, Rockville, **011 984 4290**, call first.
 3. Offer **Gauteng Anti-Substance Abuse Helpline, 0800 228 827**, 24 hours, as a telephone route.
 4. Inner-city callers can be routed to **SANCA Central Rand**, 88 Marshall Street, **011 836 2460**, call first.
-5. Say: “Assessment and provider confirmation are required. I cannot promise detox, inpatient admission, cost, or a programme place.”
+5. Say: “SANCA will start with an assessment and help work out the right programme. Let’s complete the demo assessment request now—shall I start?”
 
 **Demo coordination:** an `assessment_request` can appear on screen, immediately disclosed as not sent and not confirmed.
 
@@ -144,6 +152,8 @@ For a woman with children, the line can ask whether it is safe to share a shelte
 4. Inner-city work support: **Khoebo Jozi Opportunity Centre**, 66 Jorissen Place, **083 702 9683**, or **Johannesburg Labour Centre**, 56 Main Street, **011 843 4000 / 4001**.
 5. Soweto work support: **Soweto Labour Centre**, 2 Khumalo Road, Orlando West, **010 061 3060**.
 
+**Demo coordination:** handle one need at a time and show one simulated redirection or appointment for the caller’s first choice, then return to the remaining needs.
+
 ## Journey 10 — eviction or legal problem
 
 **Caller:** “I have been put out of the building where I was staying and my belongings are inside.”
@@ -156,6 +166,8 @@ For a woman with children, the line can ask whether it is safe to share a shelte
 4. For Soweto, return **Legal Aid South Africa Soweto**, Maponya Mall, **011 938 3547**, and say to confirm the current suite before travelling.
 5. Never state that a case qualifies or that a lawyer has accepted it.
 
+**Demo coordination:** show one simulated intake appointment or redirection only after the caller chooses the organisation.
+
 ## Journey 11 — expert challenge: “Send me to 3 Kotze or Othandweni”
 
 **Caller:** “Why are you not sending me to 3 Kotze Street? What about Othandweni?”
@@ -165,6 +177,8 @@ For a woman with children, the line can ask whether it is safe to share a shelte
 “I have not treated either as a current public intake destination. City records described the Region F shelter closures for maintenance, and Jozi My Jozi describes Othandweni as being developed with MES. I can route you to the current MES assessment contact or City Social Development, but I will not say either site is open without a fresh partner confirmation.”
 
 This is a feature, not a directory gap: suppressed sites remain recorded with their exclusion reason and primary source.
+
+**Demo coordination:** offer a simulated MES redirection, not a simulated booking at a suppressed site.
 
 ## Journey 12 — child asking for emotional support
 
@@ -176,6 +190,8 @@ This is a feature, not a directory gap: suppressed sites remain recorded with th
 2. Return **Childline 116**, free and available 24 hours. The child does not need to first describe abuse or immediate danger to receive this route.
 3. If an adult calls because they are worried about a child, return the same Childline route; do not reject the call because the reporter is an adult.
 4. If the child says they may harm themselves now, switch immediately to the emergency journey and keep Childline as additional child-specific support.
+
+**Demo coordination:** when there is no imminent danger, show one simulated Childline connection after the caller agrees.
 
 ## Journey 13 — “I need a clinic somewhere in Soweto”
 
@@ -190,6 +206,8 @@ This is a feature, not a directory gap: suppressed sites remain recorded with th
 5. Other source-listed anchors include **Tladi Main Clinic, 011 930 2111**; **Jabavu Clinic, 011 984 4014**; and **Klipspruit West Clinic, 011 947 1369**.
 6. Always say that these are source-listed public sites, not live-confirmed queues or walk-in access.
 
+**Demo coordination:** show one simulated clinic appointment at the chosen clinic; do not read several clinic options in one turn.
+
 ## Journey 14 — older person without stable accommodation
 
 **Caller:** “My father is 72 and has nowhere stable to stay. We are in Jabavu.”
@@ -198,8 +216,10 @@ This is a feature, not a directory gap: suppressed sites remain recorded with th
 
 1. Check immediate medical danger, exposure, confusion, and whether the caller needs emergency help now.
 2. Return **Soweto Home for the Aged**, 3146 Mphuthi Street, Central Western Jabavu, **010 072 0146**, call first.
-3. Explain that age, assessment, contribution, capacity, and admission must be confirmed; the line cannot reserve a place.
+3. Explain that the provider will check age, assessment, contribution, capacity, and admission with the family.
 4. Offer **City of Johannesburg Region D Social Development** as the social-worker navigation path when residential admission is not suitable or not available.
+
+**Demo coordination:** show one simulated intake check after the caller chooses the home or the City social-worker route.
 
 ## Journey 15 — routine social support after offices close
 
@@ -212,23 +232,77 @@ This is a feature, not a directory gap: suppressed sites remain recorded with th
 3. For shelter navigation, explain that City placement follows social-worker assessment and referral. Provide the Region D route for office-hours follow-up without promising a bed.
 4. For immediate danger, severe illness, violence, overdose, or imminent self-harm, switch to the emergency route rather than keeping the caller in social-service navigation.
 
+**Demo coordination:** for a routine need, show a simulated City redirection. Do not simulate emergency dispatch.
+
+## Journey 16 — Zlto earn-and-learn rewards
+
+**Caller:** “I want to build experience and earn rewards, but I do not have data.”
+
+**Expected flow:**
+
+1. Explain that **Zlto** is a digital rewards platform for verified learning, surveys, microtasks, and community activities, with a data-free access option.
+2. Say the official address slowly as **zlto dot mobi**.
+3. Explain that real public signup is for people aged 16 and older and uses the person’s own email address, cell number, and valid ID or passport.
+4. Never ask the caller to read an ID number, password, or one-time PIN aloud.
+5. Do not promise a task, selection, reward amount, payment date, marketplace item, or job.
+
+**Agent:** “If you are 16 or older, Zlto offers a data-free digital wallet for verified learning, tasks, surveys, and community activity. The official sign-up is at zlto dot mobi. Let’s open the demo Zlto reward journey now—shall I start?”
+
+**Demo coordination:** run `reward_signup` after consent.
+
+**Agent:** “All set—the demo Zlto sign-up and reward journey is ready. No Zlto account, task, reward, payment, or marketplace order was created.”
+
+## Journey 17 — Mi-Change voucher pathway through MES
+
+**Caller:** “I heard there may be a Zlto voucher for a shower or a meal. Can you connect me?”
+
+**Expected flow:**
+
+1. First handle any immediate danger, urgent health need, or need for somewhere safe tonight. Essentials are never conditional on earning.
+2. Explain that Jozi My Jozi describes **Mi-Change digital vouchers powered by Zlto** and distributed through partners such as MES and U-Turn.
+3. Use **MES, 011 725 6531**, as the source-checked first contact for the Johannesburg partner pathway. Do not voice unverified redemption-point addresses.
+4. Do not promise enrolment, eligibility, a voucher balance, a reward, a meal, a shower, or a shelter place.
+
+**Agent:** “Mi-Change uses Zlto with Johannesburg partners for essential-service vouchers. MES is the first contact on 011 725 6531. Let’s complete the demo voucher pathway check now—shall I start?”
+
+**Demo coordination:** run `voucher_pathway` after consent.
+
+**Agent:** “All set—the demo Mi-Change and Zlto partner check is ready. MES and Zlto were not contacted, and no voucher, reward, meal, shower, shelter place, or service booking was created.”
+
+## One-action demo rule
+
+Every non-emergency journey ends with exactly one caller-approved simulation:
+
+| Need | One simulated action |
+|---|---|
+| Shelter, food, older-person accommodation | Intake or availability check |
+| Routine clinic | Appointment request or doctor-connection screen |
+| Mental health, GBV, Childline | Connection screen |
+| Substance-use support | Assessment request |
+| Daytime space, grants, documents, work, legal support | Redirection or appointment |
+| Zlto public rewards | Reward sign-up journey |
+| Mi-Change essentials voucher | Partner pathway check |
+
+The line completes the demo action positively, then immediately distinguishes that screen state from a real external action.
+
 ## Five-minute recommended sequence
 
 1. Journey 1: adult near Joubert Park seeking safety and food; demonstrate MES and a simulated intake check.
 2. Journey 2: routine emotional distress; demonstrate SADAG and a simulated warm handoff.
 3. Journey 5: clinic need; demonstrate a simulated appointment or doctor-joining state.
-4. Journey 3: add “I have tablets and will take them now”; show immediate Joburg emergency escalation, with 112 first only if the caller is on a mobile phone.
+4. Journey 16: demonstrate the Zlto data-free earn-and-learn journey.
+5. Journey 17: demonstrate the Mi-Change/Zlto partner voucher pathway through MES.
+6. Journey 3: add “I have tablets and will take them now”; show immediate Joburg emergency escalation, with 112 first only if the caller is on a mobile phone.
 5. Journey 6: say the phone is shared; show address withholding and zero outbound messaging.
 
 ## Pre-demo check
 
-- `SERVICE_MODE=combined`
-- `JOZI_DEMO_MODE=true`
-- `AUTOMATIC_FOLLOWUP_ENABLED=false`
-- `CALLER_MEMORY_ENABLED=false`
+- `SERVICE_MODE=health` so the default and explicit health paths retain the health assistant.
+- `JOZI_LINE_ENABLED=true`, with `HEALTH_PHONE_NUMBER=+12063098528` and `JOZI_PHONE_NUMBER=+14255173281`.
+- `JOZI_DEMO_MODE=true`; the Jozi call profile still forces caller memory and automatic follow-up off even when the health profile enables them.
 - `JOZI_TRANSCRIPT_TTL_DAYS=7`
-- Confirm `OPENAI_WEBHOOK_SECRET` is set; Jozi/combined calls are refused without signed webhooks.
+- Confirm both `OPENAI_WEBHOOK_SECRET` and `TWILIO_AUTH_TOKEN` are set; unsigned OpenAI and Twilio requests are refused.
 - Use synthetic demo callers only.
 - Call the handful of services used in the scripted demo that morning if partner staff want to describe their hours or access as live-confirmed.
 - Do not improvise a destination outside the curated directory.
-- Turn `JOZI_DEMO_MODE` back to `false` immediately after the supervised demonstration.
+- Turn `JOZI_DEMO_MODE` back to `false` after the supervised demonstration if the Jozi number will remain publicly reachable.

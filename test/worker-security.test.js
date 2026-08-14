@@ -14,9 +14,12 @@ test('webhook responses never echo the OpenAI API key', () => {
 });
 
 test('Jozi modes gate caller memory, follow-up messaging, and last-caller fallback', () => {
-  assert.match(workerSource, /if \(!callerMemoryAllowed\(this\.env\)/);
+  assert.match(workerSource, /if \(!callerMemoryAllowed\(this\.env, serviceMode\)/);
   assert.match(workerSource, /serviceModePolicy\(serviceMode\)\.automaticFollowup/);
-  assert.match(workerSource, /modeIncludesJozi\(configuredServiceMode\(env\)\)[\s\S]{0,120}\? null/);
+  assert.match(workerSource, /profile\.callerPhone/);
+  assert.doesNotMatch(workerSource, /extractCallerPhoneFromSipHeaders\(sipHeaders\)/);
+  assert.doesNotMatch(workerSource, /extractPhoneFromSipHeaders/);
+  assert.doesNotMatch(workerSource, /getLastCaller\(5 \* 60 \* 1000\)/);
 });
 
 test('Jozi session finalization purges raw messages, transcript deltas, and metadata', () => {
@@ -28,7 +31,7 @@ test('Jozi session finalization purges raw messages, transcript deltas, and meta
   assert.match(workerSource, /async cleanupJoziSession[\s\S]{0,1200}purgeJoziSessionState/);
   assert.match(workerSource, /session cleanup failed; scheduling retry/);
   assert.match(workerSource, /setAlarm\(Date\.now\(\) \+ 60_000\)/);
-  assert.match(workerSource, /async handleRealtimeMessage\(raw\) \{\s*if \(this\.getMeta\('completed_at'\)\) return/);
+  assert.match(workerSource, /async handleRealtimeMessage\(raw\) \{\s*if \(this\.getMeta\('completed_at'\) \|\| this\.getMeta\('terminal_at'\)\) return/);
 });
 
 test('completed Jozi sessions can re-enter finalization to retry privacy cleanup', () => {
@@ -75,8 +78,24 @@ test('emergency routing can be called for fire or violence without inventing sym
 });
 
 test('Jozi mode refuses unsigned OpenAI webhooks', () => {
-  assert.match(workerSource, /modeIncludesJozi\(configuredServiceMode\(env\)\) && !env\.OPENAI_WEBHOOK_SECRET/);
-  assert.match(workerSource, /Webhook verification is required for Jozi support mode/);
+  assert.match(workerSource, /modeIncludesJozi\(configuredServiceMode\(env\)\) \|\| joziLineEnabled\(env\)/);
+  assert.match(workerSource, /Webhook verification is required for a Jozi-capable deployment/);
+});
+
+test('Twilio CallSid binds a signed incoming OpenAI call to one line profile', () => {
+  assert.match(workerSource, /setCallProfile\(callSid, \{/);
+  assert.match(workerSource, /x-twilio-parentcallsid/);
+  assert.match(workerSource, /getCallProfile\(providerCallId\)/);
+  assert.match(workerSource, /Rejecting call without one trusted, enabled line profile/);
+  assert.match(workerSource, /rejectOpenAICall\(env, callId\)/);
+  assert.match(workerSource, /event\?\.type !== 'realtime\.call\.incoming'/);
+  assert.match(workerSource, /deleteCallProfile\(providerCallId\)/);
+  assert.doesNotMatch(workerSource, /serviceModeFromSipHeaders/);
+});
+
+test('Jozi calls use their own recommended voice and caring delivery prompt', () => {
+  assert.match(workerSource, /realtimeVoiceForMode\(this\.env, serviceMode\)/);
+  assert.match(workerSource, /env\.JOZI_REALTIME_VOICE \|\| 'marin'/);
 });
 
 test('demo coordination is bound to resources offered in the current call', () => {

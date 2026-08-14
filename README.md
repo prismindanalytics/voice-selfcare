@@ -7,7 +7,7 @@ The production runtime is now a fully native Cloudflare deployment:
 - Cloudflare Worker for HTTP webhooks.
 - Durable Objects for per-call state, OpenAI Realtime monitoring, tool results, and transcript storage.
 - Cloudflare KV for finalized transcript export.
-- OpenAI Realtime API with `gpt-realtime-2`, `marin` voice, and `gpt-4o-transcribe` input transcription by default.
+- OpenAI Realtime API with `gpt-realtime-2`, independently configurable health and Jozi voices, and `gpt-4o-transcribe` input transcription by default.
 - Post-call patient/provider summaries and phone-level memory consolidation with `gpt-5.5`.
 - Timed provider/pharmacy option lookup with `gpt-5.4-mini`, capped by `PROVIDER_LOOKUP_TIMEOUT_MS` so voice tool calls fall back quickly instead of leaving long silence.
 
@@ -110,7 +110,9 @@ Configure provider webhooks to point at your Cloudflare URL:
 | Provider | URL |
 |---|---|
 | OpenAI SIP | `https://your-cloudflare-url/openai/webhook` |
-| Twilio voice | `https://your-cloudflare-url/twilio/voice` |
+| Twilio health voice | `https://your-cloudflare-url/twilio/voice/health` |
+| Twilio Jozi voice | `https://your-cloudflare-url/twilio/voice/jozi` |
+| Twilio call status | `https://your-cloudflare-url/twilio/status` |
 | SignalWire voice | `https://your-cloudflare-url/signalwire/voice` |
 
 Health checks:
@@ -120,7 +122,9 @@ curl https://your-cloudflare-url/health
 curl https://your-cloudflare-url/openai/webhook
 ```
 
-The Twilio voice response includes SIP status callbacks and a Twilio CallSid SIP header so call completion can finalize and export transcripts even if a Realtime monitor socket closes late or silently.
+The two Twilio paths use the same Worker and OpenAI project but bind each Twilio CallSid to exactly one line profile before dialing SIP. The signed OpenAI webhook resolves that stored profile; a call carrying an unknown Twilio CallSid is declined rather than falling back to the wrong assistant. The SIP response also includes completion callbacks so calls can finalize even if a Realtime monitor socket closes late or silently.
+
+The current number assignment and rollback checklist are in [`docs/twilio-line-setup.md`](docs/twilio-line-setup.md).
 
 ## Transcript Reader
 
@@ -262,21 +266,22 @@ Pickup and testing tools can resolve nearby provider options on the backend. The
 
 If the lookup is slow, unavailable, or the location is too vague, the tool returns a fast fallback asking for one more precise location detail. It should not leave the caller waiting in silence.
 
-## Jozi support mode
+## Health and Jozi line profiles
 
-`SERVICE_MODE=jozi` runs community support only. `SERVICE_MODE=combined` retains health assessment and adds the Jozi support journey.
+`SERVICE_MODE=health` is the default profile for the existing health number. When `JOZI_LINE_ENABLED=true`, `/twilio/voice/jozi` selects the Jozi-only prompt, tools, voice style, and privacy policy for that Twilio call; `/twilio/voice/health` always selects health. Both paths verify Twilio's request signature and require the signed destination number to agree with the path before storing a short-lived call profile. The signed OpenAI webhook then requires that exact profile instead of falling back to health.
 
 In Jozi and combined modes:
 
 - Every tool-returned Johannesburg destination comes from the deterministic directory in `src/jozi-support.js`; model-generated provider lookup tools are not exposed in these modes.
-- The directory covers homelessness and shelter navigation, mental health, social support, women and children, food and hygiene navigation, daytime civic spaces, clinics and hospitals, substance-use support, GBV, child safety, grants, documents, work, and legal help across the inner city and Soweto.
+- The directory covers homelessness and shelter navigation, mental health, social support, women and children, food and hygiene navigation, daytime civic spaces, clinics and hospitals, substance-use support, GBV, child safety, grants, documents, work, Zlto and Mi-Change partner pathways, and legal help across the inner city and Soweto.
 - Each result includes its primary source, source-check date, access type, audience, operating-status caveat, and `availability_confirmed: false`.
 - Known closed, moving, or conflicting destinations are explicitly suppressed rather than silently omitted.
 - Immediate danger, medical emergencies, imminent self-harm, overdose, violence, and fire use deterministic emergency routes before ordinary lookup.
 - Jozi and combined modes refuse incoming OpenAI webhooks unless `OPENAI_WEBHOOK_SECRET` is configured.
 - The Worker disables caller memory, automatic SMS/WhatsApp, application-level raw transcript retention, and the global last-caller phone fallback. Minimal call records omit the phone and raw messages and expire after `JOZI_TRANSCRIPT_TTL_DAYS`; telephony and model providers still process the live call under their own data controls.
 - Spoken turns are progressive: acknowledge the need, recommend one useful next step, ask one question, and pause instead of reading the full resource record.
-- `JOZI_DEMO_MODE=true` exposes presentation-only appointment, intake, availability-check, assessment, clinician-handoff, and redirection states. The line offers these after a caller accepts a recommended service; the completed demo screen is presented positively and immediately clarifies that no external service was contacted or confirmed.
+- `JOZI_DEMO_MODE=true` exposes presentation-only appointment, intake, availability-check, assessment, clinician-handoff, redirection, Zlto reward, and Mi-Change voucher-pathway states. The line leads into one caller-approved simulated action, presents the completed demo screen positively, and immediately clarifies that no external service was contacted and no real booking, voucher, reward, or service was created.
+- The Jozi line uses `JOZI_REALTIME_VOICE=marin`, one of OpenAI's recommended high-quality Realtime voices, plus a prompt for a caring South African English cadence, slow number-reading, and no exaggerated accent. Health voice selection remains independent.
 
 The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`](docs/jozi-demo-journeys.md).
 
@@ -288,18 +293,22 @@ The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`]
 | `OPENAI_PROJECT_ID` | yes | - | OpenAI Project ID used in SIP URI |
 | `OPENAI_REALTIME_MODEL` | no | `gpt-realtime-2` | Realtime voice model |
 | `OPENAI_REALTIME_VOICE` | no | `marin` | Realtime output voice |
+| `JOZI_REALTIME_VOICE` | no | `marin` | Jozi-only Realtime output voice |
 | `OPENAI_SUMMARY_MODEL` | no | `gpt-5.5` | Post-call summary model |
 | `OPENAI_MEMORY_MODEL` | no | `gpt-5.5` | Post-call phone memory consolidation model |
 | `OPENAI_PROVIDER_MODEL` | no | `gpt-5.4-mini` | Short provider/pharmacy option lookup model |
 | `OPENAI_TRANSCRIPTION_MODEL` | no | `gpt-4o-transcribe` | Patient-side input audio transcription model |
 | `OPENAI_MAX_OUTPUT_TOKENS` | no | `900` | Bounds spoken responses without truncating audio |
-| `OPENAI_WEBHOOK_SECRET` | Jozi/combined | - | Verifies OpenAI webhooks; Jozi modes refuse calls when it is absent |
+| `OPENAI_WEBHOOK_SECRET` | Jozi-capable deployment | - | Verifies OpenAI webhooks; Jozi-capable deployments refuse calls when it is absent |
 | `OPENAI_ACCEPT_TOOLS` | no | `true` | Include tools in Realtime accept payload |
 | `OPENAI_ACCEPT_SIMPLE` | no | `false` | Use minimal instructions for debugging |
 | `VAD_SILENCE_MS` | no | `1200` | Silence duration before the Realtime model responds |
 | `FINALIZE_IDLE_MS` | no | `120000` | Idle fallback before final transcript export |
 | `PROVIDER_LOOKUP_TIMEOUT_MS` | no | `2500` | Hard timeout for provider lookup during voice tool calls |
 | `SERVICE_MODE` | no | `health` | `health`, `jozi`, or `combined` prompt and tool profile |
+| `JOZI_LINE_ENABLED` | no | `false` | Enables the explicit `/twilio/voice/jozi` line profile |
+| `HEALTH_PHONE_NUMBER` | Twilio line split | - | Expected E.164 destination number for the health webhook |
+| `JOZI_PHONE_NUMBER` | Jozi Twilio path | - | Expected E.164 destination number for the Jozi webhook |
 | `JOZI_DEMO_MODE` | no | `false` | Enables action-time demo booking, intake, assessment, clinician, and redirection screens |
 | `AUTOMATIC_FOLLOWUP_ENABLED` | no | `true` | Master switch for outbound SMS/WhatsApp; Jozi modes force it off |
 | `CALLER_MEMORY_ENABLED` | no | `true` | Enables hashed phone-level memory refresh after calls |
@@ -307,7 +316,7 @@ The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`]
 | `JOZI_TRANSCRIPT_TTL_DAYS` | no | `7` | Retention for minimal, phone-free Jozi call records |
 | `TELEPHONY_CODEC` | no | `g711_ulaw` | SignalWire codec hint |
 | `TWILIO_ACCOUNT_SID` | Twilio | - | Twilio Account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio | - | Twilio auth token |
+| `TWILIO_AUTH_TOKEN` | Twilio voice paths | - | Twilio primary auth token used to verify every voice and status webhook signature |
 | `TWILIO_SMS_NUMBER` | no | - | SMS follow-up sender |
 | `TWILIO_WHATSAPP_NUMBER` | no | - | WhatsApp follow-up sender |
 | `TWILIO_MESSAGING_SERVICE_SID` | no | - | Twilio Messaging Service SID |

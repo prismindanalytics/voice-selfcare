@@ -9,6 +9,13 @@ import {
   resolveJoziSupport,
   serviceModePolicy
 } from './jozi-support.js';
+import {
+  extractTwilioCallSidFromSipHeaders,
+  normalizeLineServiceMode,
+  serviceModeForTwilioVoicePath,
+  twilioLineBindingMatches,
+  verifyTwilioRequest
+} from './line-routing.js';
 
 const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2';
 const DEFAULT_SUMMARY_MODEL = 'gpt-5.5';
@@ -108,7 +115,7 @@ const ACTION_RESPONSE_INSTRUCTIONS = [
 
 const JOZI_ACTION_RESPONSE_INSTRUCTIONS = [
   'Say only the tool output voiceResponse, or faithfully translate it. Do not read the option metadata, internal status, or a second route that the spoken response has deliberately left for later.',
-  'Sound like a caring person on the phone: warm, unhurried, and conversational. Keep the turn to the short sentences in voiceResponse, then pause for the caller.',
+  'Sound like a caring person on the phone: warm, unhurried, and conversational. Use a natural South African English cadence without caricature or an exaggerated accent, pronounce Johannesburg place names carefully, and read phone numbers in slow groups. Keep the turn to the short sentences in voiceResponse, then pause for the caller.',
   'Use voiceResponse as the complete factual basis without adding any provider name, telephone number, address, hours, availability, or capability.',
   'Never claim a real bed, meal, appointment, clinician, transfer, or service is confirmed unless the result explicitly says confirmed true.',
   'For a demo coordination result, lead positively with the completed demo action. Then say the short built-in sentence explaining that the demo is not connected to the external service. Do not preface the action with a limitation.',
@@ -133,39 +140,31 @@ export class CallerRegistry extends DurableObject {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS caller_cache (
-          id TEXT PRIMARY KEY,
-          phone TEXT NOT NULL,
-          created_at INTEGER NOT NULL
-        )
-      `);
-      this.ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS call_map (
           provider_call_id TEXT PRIMARY KEY,
           openai_call_id TEXT NOT NULL,
           updated_at INTEGER NOT NULL
         )
       `);
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS call_profile (
+          provider_call_id TEXT PRIMARY KEY,
+          service_mode TEXT NOT NULL,
+          caller_phone TEXT,
+          destination_phone TEXT,
+          created_at INTEGER NOT NULL
+        )
+      `);
+      const profileColumns = new Set(
+        this.ctx.storage.sql.exec('PRAGMA table_info(call_profile)').toArray().map((column) => column.name)
+      );
+      if (!profileColumns.has('caller_phone')) {
+        this.ctx.storage.sql.exec('ALTER TABLE call_profile ADD COLUMN caller_phone TEXT');
+      }
+      if (!profileColumns.has('destination_phone')) {
+        this.ctx.storage.sql.exec('ALTER TABLE call_profile ADD COLUMN destination_phone TEXT');
+      }
     });
-  }
-
-  setLastCaller(phoneNumber) {
-    if (!phoneNumber) return;
-    this.ctx.storage.sql.exec(
-      'INSERT OR REPLACE INTO caller_cache (id, phone, created_at) VALUES (?, ?, ?)',
-      'last',
-      String(phoneNumber),
-      Date.now()
-    );
-  }
-
-  getLastCaller(maxAgeMs = 120000) {
-    const row = this.ctx.storage.sql
-      .exec('SELECT phone, created_at FROM caller_cache WHERE id = ?', 'last')
-      .toArray()[0];
-    if (!row) return null;
-    if (Date.now() - Number(row.created_at) > maxAgeMs) return null;
-    return row.phone;
   }
 
   setCallMapping(providerCallId, openaiCallId) {
@@ -191,6 +190,46 @@ export class CallerRegistry extends DurableObject {
   deleteCallMapping(providerCallId) {
     if (!providerCallId) return;
     this.ctx.storage.sql.exec('DELETE FROM call_map WHERE provider_call_id = ?', String(providerCallId));
+  }
+
+  setCallProfile(providerCallId, profile = {}) {
+    if (!providerCallId) return;
+    const serviceMode = normalizeLineServiceMode(profile.serviceMode);
+    const callerPhone = asE164(profile.callerPhone || '');
+    const destinationPhone = asE164(profile.destinationPhone || '');
+    this.ctx.storage.sql.exec('DELETE FROM call_profile WHERE created_at < ?', Date.now() - 6 * 60 * 60 * 1000);
+    this.ctx.storage.sql.exec(
+      'INSERT OR REPLACE INTO call_profile (provider_call_id, service_mode, caller_phone, destination_phone, created_at) VALUES (?, ?, ?, ?, ?)',
+      String(providerCallId),
+      serviceMode,
+      isUsablePatientPhone(callerPhone) ? callerPhone : null,
+      isUsablePatientPhone(destinationPhone) ? destinationPhone : null,
+      Date.now()
+    );
+  }
+
+  getCallProfile(providerCallId, maxAgeMs = 6 * 60 * 60 * 1000) {
+    if (!providerCallId) return null;
+    const row = this.ctx.storage.sql
+      .exec('SELECT service_mode, caller_phone, destination_phone, created_at FROM call_profile WHERE provider_call_id = ?', String(providerCallId))
+      .toArray()[0];
+    if (!row) return null;
+    if (Date.now() - Number(row.created_at) > maxAgeMs) {
+      this.deleteCallProfile(providerCallId);
+      return null;
+    }
+    const serviceMode = String(row.service_mode || '').trim().toLowerCase();
+    if (!['health', 'jozi'].includes(serviceMode)) return null;
+    return {
+      serviceMode,
+      callerPhone: asE164(row.caller_phone || '') || null,
+      destinationPhone: asE164(row.destination_phone || '') || null
+    };
+  }
+
+  deleteCallProfile(providerCallId) {
+    if (!providerCallId) return;
+    this.ctx.storage.sql.exec('DELETE FROM call_profile WHERE provider_call_id = ?', String(providerCallId));
   }
 }
 
@@ -228,47 +267,59 @@ export class CallSession extends DurableObject {
   async acceptAndMonitor(event, initialPhone = null, options = {}) {
     const callId = getCallId(event);
     if (!callId) return;
+    if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
+    if (this.getMeta('accepting_at') && !this.getMeta('accepted_at')) return;
 
-    const serviceMode = configuredServiceMode(this.env);
-
-    const phoneFromSip = extractPhoneFromSipHeaders(event?.data?.sip_headers);
-    const providerCallId = extractSipHeaderValue(event?.data?.sip_headers, 'x-twilio-parentcallsid') ||
-      extractSipHeaderValue(event?.data?.sip_headers, 'x-twilio-callsid') ||
-      extractSipHeaderValue(event?.data?.sip_headers, 'callid');
+    const serviceMode = normalizeLineServiceMode(options.serviceMode, configuredServiceMode(this.env));
+    const providerCallId = /^CA[0-9a-f]{32}$/i.test(String(options.providerCallId || ''))
+      ? String(options.providerCallId)
+      : null;
     const safePhone = modeIncludesJozi(serviceMode)
       ? normalizePatientPhone(null, callId)
-      : normalizePatientPhone(phoneFromSip || initialPhone, callId);
+      : normalizePatientPhone(initialPhone, callId);
+    this.setMeta('accepting_at', new Date().toISOString());
     this.setMeta('call_id', callId);
     this.setMeta('patient_phone', safePhone);
     this.setMeta('service_mode', serviceMode);
-    const callerMemory = await this.loadCallerMemory(safePhone);
-    if (callerMemory) {
-      this.setMeta('caller_memory_context', JSON.stringify(callerMemory));
-      this.setMeta('caller_memory_loaded_at', new Date().toISOString());
-    }
-    if (providerCallId) {
+    try {
+      if (!providerCallId) throw new Error('A verified provider call id is required.');
       this.setMeta('provider_call_id', providerCallId);
       await callerRegistry(this.env).setCallMapping(providerCallId, callId);
-    }
-    this.setMeta('last_stage', 'webhook_received');
-    console.log('[CallSession] incoming call', JSON.stringify({ callId }));
+      if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
 
-    const acceptedAt = this.getMeta('accepted_at');
-    if (!acceptedAt) {
-      await this.acceptCall(callId, options);
-      this.setMeta('accepted_at', new Date().toISOString());
-    }
+      const callerMemory = await this.loadCallerMemory(safePhone, serviceMode);
+      if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
+      if (callerMemory) {
+        this.setMeta('caller_memory_context', JSON.stringify(callerMemory));
+        this.setMeta('caller_memory_loaded_at', new Date().toISOString());
+      }
 
-    await this.connectMonitor(callId);
-    await this.scheduleFinalizeAlarm('accept_and_monitor');
+      this.setMeta('last_stage', 'webhook_received');
+      console.log('[CallSession] incoming call', JSON.stringify({ callId, serviceMode }));
+
+      if (!this.getMeta('accepted_at')) {
+        const accepted = await this.acceptCall(callId, options);
+        if (!accepted || this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
+        this.setMeta('accepted_at', new Date().toISOString());
+      }
+
+      if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
+      const connected = await this.connectMonitor(callId);
+      if (!connected || this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
+      await this.scheduleFinalizeAlarm('accept_and_monitor');
+    } finally {
+      this.deleteMeta('accepting_at');
+    }
   }
 
   async alarm() {
+    if (!this.getMeta('terminal_at')) this.setMeta('terminal_at', new Date().toISOString());
     if (!this.getMeta('completed_at')) this.setMeta('finalize_reason', 'idle_alarm');
     await this.finalizeCall();
   }
 
   async forceFinalize(reason = 'external_callback') {
+    if (!this.getMeta('terminal_at')) this.setMeta('terminal_at', new Date().toISOString());
     if (!this.getMeta('completed_at')) this.setMeta('finalize_reason', reason);
     await this.finalizeCall();
   }
@@ -296,15 +347,16 @@ export class CallSession extends DurableObject {
     };
   }
 
-  async loadCallerMemory(phone) {
-    if (!callerMemoryAllowed(this.env) || !isUsablePatientPhone(phone) || !this.env.TRANSCRIPTS) return null;
+  async loadCallerMemory(phone, serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env)) {
+    if (!callerMemoryAllowed(this.env, serviceMode) || !isUsablePatientPhone(phone) || !this.env.TRANSCRIPTS) return null;
     const memory = await readCallerMemory(this.env, phone);
     return buildVoiceSafeMemoryContext(memory);
   }
 
   async updateCallerMemory(summaries, messages, artifacts) {
     const phone = this.getMeta('patient_phone') || '';
-    if (!callerMemoryAllowed(this.env) || !isUsablePatientPhone(phone) || !this.env.TRANSCRIPTS) return null;
+    const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
+    if (!callerMemoryAllowed(this.env, serviceMode) || !isUsablePatientPhone(phone) || !this.env.TRANSCRIPTS) return null;
 
     const existing = await readCallerMemory(this.env, phone);
     const memory = await generateCallerMemoryRecord(this.env, {
@@ -337,7 +389,7 @@ export class CallSession extends DurableObject {
       model,
       audio: {
         input: realtimeInputAudioConfig(this.env),
-        output: { voice: this.env.OPENAI_REALTIME_VOICE || DEFAULT_VOICE }
+        output: { voice: realtimeVoiceForMode(this.env, serviceMode) }
       },
       instructions: simpleInstructions ? buildMinimalInstructions(serviceMode) : buildServiceInstructions(serviceMode, memoryContext),
       tools: useTools ? realtimeTools(serviceMode, demoEnabled) : undefined
@@ -355,17 +407,20 @@ export class CallSession extends DurableObject {
 
     if (!response.ok) {
       const body = await response.text();
+      if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return false;
       this.setMeta('accept_error', `${response.status} ${body.slice(0, 1000)}`);
       console.error('[CallSession] accept failed', JSON.stringify({ callId, status: response.status, body: body.slice(0, 500) }));
       throw new Error(`OpenAI accept failed: ${response.status}`);
     }
+    if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return false;
     this.setMeta('last_stage', 'call_accepted');
     this.setMeta('accept_transcription_model', this.env.OPENAI_TRANSCRIPTION_MODEL || DEFAULT_TRANSCRIPTION_MODEL);
     console.log('[CallSession] accepted call', JSON.stringify({ callId, model }));
+    return true;
   }
 
   async connectMonitor(callId) {
-    if (this.monitorSocket && this.monitorSocket.readyState === WebSocket.OPEN) return;
+    if (this.monitorSocket && this.monitorSocket.readyState === WebSocket.OPEN) return true;
 
     const apiKey = requireEnv(this.env, 'OPENAI_API_KEY');
     this.setMeta('last_stage', 'connecting_monitor');
@@ -376,6 +431,10 @@ export class CallSession extends DurableObject {
         Upgrade: 'websocket'
       }
     });
+
+    if (this.getMeta('completed_at') || this.getMeta('terminal_at')) {
+      return false;
+    }
 
     const socket = response.webSocket;
     if (!socket) {
@@ -414,10 +473,11 @@ export class CallSession extends DurableObject {
         this.sendInitialResponse();
       }
     }, 500);
+    return true;
   }
 
   async handleRealtimeMessage(raw) {
-    if (this.getMeta('completed_at')) return;
+    if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
     let message;
     try {
       message = JSON.parse(raw);
@@ -505,6 +565,7 @@ export class CallSession extends DurableObject {
     if (message.type === 'conversation.item.input_audio_transcription.completed' && message.transcript) {
       this.addMessageOnce('patient', message.transcript);
       this.setMeta('last_patient_text', message.transcript);
+      this.setMeta('patient_turn_seq', String(Number(this.getMeta('patient_turn_seq') || 0) + 1));
       this.clearInputTranscriptDelta(message.item_id);
       return;
     }
@@ -582,7 +643,11 @@ export class CallSession extends DurableObject {
             const consentAction = consentResourceId ? result.suggested_demo_action || '' : '';
             this.setMeta('jozi_demo_consent_offer', JSON.stringify(
               consentResourceId && consentAction
-                ? { resource_id: consentResourceId, action: consentAction }
+                ? {
+                    resource_id: consentResourceId,
+                    action: consentAction,
+                    patient_turn_seq: Number(this.getMeta('patient_turn_seq') || 0)
+                  }
                 : {}
             ));
           }
@@ -592,9 +657,13 @@ export class CallSession extends DurableObject {
         case 'coordinate_support_demo':
           {
             const consentOffer = this.getMetaJson('jozi_demo_consent_offer') || {};
+            const callerAnsweredAfterOffer = Number(this.getMeta('patient_turn_seq') || 0) >
+              Number(consentOffer.patient_turn_seq ?? Number.POSITIVE_INFINITY);
             result = coordinateJoziSupport({
               ...args,
               demo_enabled: joziDemoEnabled(this.env),
+              require_confirmed_consent: true,
+              caller_answered_after_offer: callerAnsweredAfterOffer,
               require_offered_resource: true,
               offered_resource_ids: consentOffer.resource_id ? [consentOffer.resource_id] : [],
               require_offered_action: true,
@@ -717,6 +786,7 @@ export class CallSession extends DurableObject {
   }
 
   async finalizeCall() {
+    if (!this.getMeta('terminal_at')) this.setMeta('terminal_at', new Date().toISOString());
     const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
     const joziPrivacyMode = !serviceModePolicy(serviceMode).persistRawTranscript;
     if (this.getMeta('completed_at')) {
@@ -789,6 +859,7 @@ export class CallSession extends DurableObject {
     if (providerCallId) {
       try {
         await callerRegistry(this.env).deleteCallMapping(providerCallId);
+        await callerRegistry(this.env).deleteCallProfile(providerCallId);
       } catch (error) {
         mappingError = error;
         firstError = error;
@@ -1071,6 +1142,10 @@ export class CallSession extends DurableObject {
     return row?.value || null;
   }
 
+  deleteMeta(key) {
+    this.ctx.storage.sql.exec('DELETE FROM metadata WHERE key = ?', key);
+  }
+
   getMetaJson(key) {
     const value = this.getMeta(key);
     if (!value) return null;
@@ -1103,6 +1178,9 @@ async function routeRequest(request, env, ctx) {
       runtime: 'cloudflare-worker',
       serviceMode: configuredServiceMode(env),
       joziDemoMode: joziDemoEnabled(env),
+      lineProfiles: joziLineEnabled(env)
+        ? { twilioDefault: configuredServiceMode(env), twilioHealth: 'health', twilioJozi: 'jozi' }
+        : { twilioDefault: configuredServiceMode(env) },
       timestamp: new Date().toISOString()
     });
   }
@@ -1130,22 +1208,28 @@ async function routeRequest(request, env, ctx) {
 </Response>`);
   }
 
-  if (request.method === 'POST' && path === '/signalwire/status') {
-    const form = await readForm(request);
-    if (!modeIncludesJozi(configuredServiceMode(env)) && form.From) await callerRegistry(env).setLastCaller(form.From);
-    return textResponse('OK');
-  }
+  if (request.method === 'POST' && path === '/signalwire/status') return textResponse('OK');
 
   if (request.method === 'POST' && path.startsWith('/twilio/voice')) {
-    const forcedCodec = path.endsWith('/pcmu') ? 'PCMU' : path.endsWith('/pcma') ? 'PCMA' : '';
-    return handleTwilioVoice(request, env, forcedCodec);
+    if (!env.TWILIO_AUTH_TOKEN) return textResponse('Twilio verification is not configured.', 503);
+    if (!await verifyTwilioRequest(request, env)) return textResponse('Invalid Twilio signature.', 403);
+    const normalizedVoicePath = path.toLowerCase().replace(/\/+$/, '');
+    const forcedCodec = normalizedVoicePath.endsWith('/pcmu') ? 'PCMU' : normalizedVoicePath.endsWith('/pcma') ? 'PCMA' : '';
+    const serviceMode = serviceModeForTwilioVoicePath(path, configuredServiceMode(env));
+    if (!serviceMode) return textResponse('Not Found', 404);
+    if (serviceMode === 'jozi' && !joziLineEnabled(env)) return textResponse('Jozi line is not enabled.', 404);
+    return handleTwilioVoice(request, env, { forcedCodec, serviceMode });
   }
 
   if (request.method === 'POST' && path === '/twilio/status') {
+    if (!env.TWILIO_AUTH_TOKEN) return textResponse('Twilio verification is not configured.', 503);
+    if (!await verifyTwilioRequest(request, env)) return textResponse('Invalid Twilio signature.', 403);
     return handleTwilioStatus(request, env, ctx);
   }
 
   if (request.method === 'POST' && path === '/twilio/dial-status') {
+    if (!env.TWILIO_AUTH_TOKEN) return textResponse('Twilio verification is not configured.', 503);
+    if (!await verifyTwilioRequest(request, env)) return textResponse('Invalid Twilio signature.', 403);
     return handleTwilioDialStatus(request, env, ctx);
   }
 
@@ -1181,8 +1265,8 @@ async function routeRequest(request, env, ctx) {
 }
 
 async function handleOpenAIWebhook(request, env, ctx, minimal) {
-  if (modeIncludesJozi(configuredServiceMode(env)) && !env.OPENAI_WEBHOOK_SECRET) {
-    return textResponse('Webhook verification is required for Jozi support mode.', 503);
+  if ((modeIncludesJozi(configuredServiceMode(env)) || joziLineEnabled(env)) && !env.OPENAI_WEBHOOK_SECRET) {
+    return textResponse('Webhook verification is required for a Jozi-capable deployment.', 503);
   }
   const rawBody = await request.text();
   if (env.OPENAI_WEBHOOK_SECRET) {
@@ -1197,21 +1281,47 @@ async function handleOpenAIWebhook(request, env, ctx, minimal) {
     return textResponse('Bad JSON', 400);
   }
 
+  if (event?.type !== 'realtime.call.incoming') return textResponse('OK');
+
   const callId = getCallId(event);
   if (callId) {
-    const phoneFromSip = extractPhoneFromSipHeaders(event?.data?.sip_headers);
-    const phone = phoneFromSip || (modeIncludesJozi(configuredServiceMode(env))
-      ? null
-      : await callerRegistry(env).getLastCaller(5 * 60 * 1000));
-    ctx.waitUntil(callSession(env, callId).acceptAndMonitor(event, phone, { minimal }));
+    const sipHeaders = event?.data?.sip_headers;
+    const providerCallId = extractTwilioCallSidFromSipHeaders(sipHeaders);
+    const profile = providerCallId ? await callerRegistry(env).getCallProfile(providerCallId) : null;
+    if (!profile || (profile.serviceMode === 'jozi' && !joziLineEnabled(env))) {
+      console.error('[Routing] Rejecting call without one trusted, enabled line profile', JSON.stringify({ callId }));
+      ctx.waitUntil(rejectOpenAICall(env, callId).catch((error) => {
+        console.error('[Routing] Could not reject unprofiled call', error);
+      }));
+      return textResponse('OK');
+    }
+    ctx.waitUntil(callSession(env, callId).acceptAndMonitor(event, profile.callerPhone, {
+      minimal,
+      serviceMode: profile.serviceMode,
+      providerCallId
+    }));
   }
 
   return textResponse('OK');
 }
 
+async function rejectOpenAICall(env, callId, statusCode = 603) {
+  const apiKey = requireEnv(env, 'OPENAI_API_KEY');
+  const response = await fetch(`https://api.openai.com/v1/realtime/calls/${encodeURIComponent(callId)}/reject`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ status_code: statusCode })
+  });
+  if (!response.ok) {
+    throw new Error(`OpenAI call rejection failed (${response.status}): ${await response.text()}`);
+  }
+}
+
 async function handleSignalWireVoice(request, env) {
-  const form = await readForm(request);
-  if (!modeIncludesJozi(configuredServiceMode(env)) && form.From) await callerRegistry(env).setLastCaller(form.From);
+  await readForm(request);
 
   const projectId = requireEnv(env, 'OPENAI_PROJECT_ID');
   const sipUri = `sip:${projectId}@sip.api.openai.com;transport=tls`;
@@ -1227,19 +1337,37 @@ async function handleSignalWireVoice(request, env) {
 </Response>`);
 }
 
-async function handleTwilioVoice(request, env, forcedCodec = '') {
+async function handleTwilioVoice(request, env, options = {}) {
   const form = await readForm(request);
-  if (!modeIncludesJozi(configuredServiceMode(env)) && form.From) await callerRegistry(env).setLastCaller(form.From);
+  const serviceMode = normalizeLineServiceMode(options.serviceMode, configuredServiceMode(env));
+  const callSid = String(form.CallSid || '').trim();
+  if (!/^CA[0-9a-f]{32}$/i.test(callSid)) {
+    return xmlResponse('<Response><Say>This phone line is temporarily unavailable. Please try again shortly.</Say><Hangup/></Response>', 400);
+  }
+  if (!twilioLineBindingMatches({
+    serviceMode,
+    to: form.To,
+    healthNumber: env.HEALTH_PHONE_NUMBER,
+    joziNumber: env.JOZI_PHONE_NUMBER
+  })) {
+    return xmlResponse('<Response><Say>This phone number is not configured for this line.</Say><Hangup/></Response>', 403);
+  }
+  const callerPhone = asE164(form.From || '');
+  await callerRegistry(env).setCallProfile(callSid, {
+    serviceMode,
+    callerPhone: serviceMode === 'health' && isUsablePatientPhone(callerPhone) ? callerPhone : null,
+    destinationPhone: form.To
+  });
 
   const projectId = requireEnv(env, 'OPENAI_PROJECT_ID');
   const origin = new URL(request.url).origin;
-  const sipHeaders = form.CallSid ? { 'x-twilio-parentcallsid': form.CallSid } : {};
+  const sipHeaders = { 'x-twilio-parentcallsid': callSid };
   const sipUri = buildOpenAISipUri(projectId, sipHeaders);
-  const codec = forcedCodec || env.TWILIO_SIP_CODECS || mapG711ToSip(env.TELEPHONY_CODEC);
+  const codec = options.forcedCodec || env.TWILIO_SIP_CODECS || mapG711ToSip(env.TELEPHONY_CODEC);
   const codecsAttr = codec ? ` codecs="${escapeXml(codec)}"` : '';
   const statusUrl = `${origin}/twilio/status`;
   const dialStatusUrl = `${origin}/twilio/dial-status`;
-  const lineLabel = modeIncludesJozi(configuredServiceMode(env)) ? 'Jozi health and support line' : 'healthcare assistant';
+  const lineLabel = modeIncludesJozi(serviceMode) ? 'Jozi support line' : 'healthcare assistant';
 
   return xmlResponse(`<Response>
   <Say>Connecting to the ${escapeXml(lineLabel)}, please wait.</Say>
@@ -1259,7 +1387,6 @@ async function handleTwilioDialStatus(request, env, ctx) {
 
 async function handleTwilioCompletionCallback(request, env, ctx, returnTwiml) {
   const form = await readForm(request);
-  if (!modeIncludesJozi(configuredServiceMode(env)) && form.From) await callerRegistry(env).setLastCaller(form.From);
 
   const terminalStatuses = new Set(['completed', 'busy', 'failed', 'no-answer', 'canceled']);
   const statusCandidates = uniqueStrings([
@@ -1279,9 +1406,16 @@ async function handleTwilioCompletionCallback(request, env, ctx, returnTwiml) {
     let matched = 0;
     for (const providerCallId of candidates) {
       const openaiCallId = await callerRegistry(env).getCallMapping(providerCallId);
-      if (!openaiCallId) continue;
-      matched += 1;
-      ctx.waitUntil(callSession(env, openaiCallId).forceFinalize(`twilio:${status}`));
+      if (openaiCallId) {
+        matched += 1;
+        ctx.waitUntil((async () => {
+          await callSession(env, openaiCallId).forceFinalize(`twilio:${status}`);
+          await callerRegistry(env).deleteCallMapping(providerCallId);
+          await callerRegistry(env).deleteCallProfile(providerCallId);
+        })());
+      } else {
+        ctx.waitUntil(callerRegistry(env).deleteCallProfile(providerCallId));
+      }
     }
     console.log('[Twilio] call status', JSON.stringify({ status, candidates, matched }));
   }
@@ -2685,7 +2819,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
     {
       type: 'function',
       name: 'find_support_services',
-      description: 'Find deterministic Johannesburg or Soweto support options only from the curated, public-source directory. Use for mental health, social support, shelter or safe-space navigation, women-and-children shelter, food or hygiene navigation, daytime community space, clinics, substance-use support, GBV, children and families, grants, documents, jobs, legal help, or crisis routing. Never invent a destination.',
+      description: 'Find deterministic Johannesburg or Soweto support options only from the curated, public-source directory. Use for mental health, social support, shelter or safe-space navigation, women-and-children shelter, food or hygiene navigation, daytime community space, clinics, substance-use support, GBV, children and families, grants, documents, jobs, Zlto rewards, Mi-Change vouchers, legal help, or crisis routing. Never invent a destination.',
       parameters: {
         type: 'object',
         properties: {
@@ -2694,7 +2828,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
           location: { type: 'string' },
           landmark: { type: 'string' },
           audience: { type: 'string', enum: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'] },
-          contact_mode: { type: 'string', enum: ['phone', 'in_person', 'either'] },
+          contact_mode: { type: 'string', enum: ['phone', 'in_person', 'online', 'either'] },
           safety_context: {
             type: 'string',
             enum: ['none', 'medical_emergency', 'self_harm_imminent', 'suicide_imminent', 'overdose', 'violence_now', 'gbv_immediate', 'fire_emergency', 'immediate_danger']
@@ -2710,19 +2844,20 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
     ...(demoEnabled ? [{
       type: 'function',
       name: 'coordinate_support_demo',
-      description: 'Complete the selected demo appointment, clinician handoff, availability check, intake request, assessment request, or caring redirection after the caller accepts a resource returned by find_support_services. Present the completed demo action positively; the tool response includes the required brief clarification that no external service was contacted.',
+      description: 'Complete the selected demo appointment, clinician handoff, availability check, intake request, assessment request, caring redirection, Zlto reward journey, or Mi-Change voucher pathway only after the caller answers the offer and clearly says yes. Set consent_confirmed true only for that explicit acceptance. Present the completed demo action positively; the tool response includes the required brief clarification that no external service was contacted.',
       parameters: {
         type: 'object',
         properties: {
           resource_id: { type: 'string' },
           action: {
             type: 'string',
-            enum: ['appointment_request', 'clinician_handoff', 'availability_check', 'intake_request', 'navigator_handoff', 'warm_handoff', 'assessment_request']
+            enum: ['appointment_request', 'clinician_handoff', 'availability_check', 'intake_request', 'navigator_handoff', 'warm_handoff', 'assessment_request', 'reward_signup', 'voucher_pathway']
           },
           requested_time: { type: 'string' },
-          reason: { type: 'string' }
+          reason: { type: 'string' },
+          consent_confirmed: { type: 'boolean' }
         },
-        required: ['resource_id', 'action']
+        required: ['resource_id', 'action', 'consent_confirmed']
       }
     }] : [])
   ];
@@ -3467,8 +3602,17 @@ function joziDemoEnabled(env) {
   return String(env.JOZI_DEMO_MODE || 'false').toLowerCase() === 'true';
 }
 
-function callerMemoryAllowed(env) {
-  return callerMemoryEnabled(env) && serviceModePolicy(configuredServiceMode(env)).callerMemory;
+function realtimeVoiceForMode(env, serviceMode) {
+  if (modeIncludesJozi(serviceMode)) return env.JOZI_REALTIME_VOICE || 'marin';
+  return env.OPENAI_REALTIME_VOICE || DEFAULT_VOICE;
+}
+
+function joziLineEnabled(env) {
+  return String(env.JOZI_LINE_ENABLED || 'false').toLowerCase() === 'true';
+}
+
+function callerMemoryAllowed(env, serviceMode = configuredServiceMode(env)) {
+  return callerMemoryEnabled(env) && serviceModePolicy(serviceMode).callerMemory;
 }
 
 function toolAllowedForMode(mode, toolName, demoEnabled) {
@@ -3819,55 +3963,6 @@ function asE164(phone) {
 
 function asWhatsApp(phone) {
   return String(phone).startsWith('whatsapp:') ? String(phone) : `whatsapp:${asE164(phone)}`;
-}
-
-function extractPhoneFromSipHeaders(sipHeaders) {
-  try {
-    if (!sipHeaders) return null;
-    const headers = Array.isArray(sipHeaders)
-      ? Object.fromEntries(sipHeaders.filter((h) => h.name && h.value).map((h) => [h.name.toLowerCase(), h.value]))
-      : sipHeaders;
-    if (typeof headers !== 'object') return null;
-
-    const values = Object.values(headers).flatMap((value) => Array.isArray(value) ? value : [value]);
-    for (const value of values) {
-      const text = String(value);
-      const match = text.match(/(?:tel:|sip:)?(\+?\d{8,15})(?:@|\b)/i) || text.match(/\+(\d{8,15})/);
-      if (match) return match[1].startsWith('+') ? match[1] : `+${match[1]}`;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function extractSipHeaderValue(sipHeaders, headerName) {
-  try {
-    if (!sipHeaders || !headerName) return null;
-    const target = canonicalHeaderName(headerName);
-    const entries = Array.isArray(sipHeaders)
-      ? sipHeaders
-          .filter((header) => header?.name && header?.value !== undefined)
-          .map((header) => [header.name, header.value])
-      : Object.entries(sipHeaders);
-
-    for (const [name, value] of entries) {
-      if (canonicalHeaderName(name) !== target) continue;
-      const values = Array.isArray(value) ? value : [value];
-      const found = values.find((item) => String(item || '').trim());
-      if (found) return String(found).trim();
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function canonicalHeaderName(name) {
-  return String(name || '')
-    .toLowerCase()
-    .replace(/^sipheader[-_]?/i, '')
-    .replace(/[-_]/g, '');
 }
 
 async function verifyStandardWebhook(headers, rawBody, secret) {

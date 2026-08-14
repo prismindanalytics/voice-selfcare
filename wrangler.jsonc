@@ -38,6 +38,7 @@
   "vars": {
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2",
     "OPENAI_REALTIME_VOICE": "marin",
+    "JOZI_REALTIME_VOICE": "marin",
     "OPENAI_SUMMARY_MODEL": "gpt-5.5",
     "OPENAI_MEMORY_MODEL": "gpt-5.5",
     "OPENAI_PROVIDER_MODEL": "gpt-5.4-mini",
@@ -50,10 +51,13 @@
     "VAD_SILENCE_MS": "1200",
     "FINALIZE_IDLE_MS": "120000",
     "PROVIDER_LOOKUP_TIMEOUT_MS": "2500",
-    "SERVICE_MODE": "combined",
+    "SERVICE_MODE": "health",
+    "JOZI_LINE_ENABLED": "true",
+    "HEALTH_PHONE_NUMBER": "+12063098528",
+    "JOZI_PHONE_NUMBER": "+14255173281",
     "JOZI_DEMO_MODE": "true",
-    "AUTOMATIC_FOLLOWUP_ENABLED": "false",
-    "CALLER_MEMORY_ENABLED": "false",
+    "AUTOMATIC_FOLLOWUP_ENABLED": "true",
+    "CALLER_MEMORY_ENABLED": "true",
     "JOZI_TRANSCRIPT_TTL_DAYS": "7"
   }
 }

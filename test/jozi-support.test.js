@@ -762,7 +762,7 @@ test('adult shelter navigation tonight retains a call-first homelessness route',
     timing: 'tonight'
   });
   assert.equal(result.options[0]?.id, 'mes-johannesburg-navigation');
-  assert.match(result.voiceResponse, /can't confirm a bed, meal, or intake tonight/i);
+  assert.match(result.voiceResponse, /call first to check tonight’s bed, meal, and intake options/i);
   assert.match(result.options[0].availability_note, /does not confirm.*bed/i);
 });
 
@@ -785,7 +785,7 @@ test('after-hours requests prefer 24-hour navigation and qualify unconfirmed ope
     timing: 'now'
   });
   assert.equal(now.options[0]?.id, 'soweto-labour-centre');
-  assert.match(now.voiceResponse, /can't confirm current availability/i);
+  assert.match(now.voiceResponse, /call first to check what is available now/i);
 
   const routineClinic = resolveJoziSupport({
     needs: ['healthcare'],
@@ -795,7 +795,7 @@ test('after-hours requests prefer 24-hour navigation and qualify unconfirmed ope
     timing: 'tonight'
   });
   assert.equal(routineClinic.options[0]?.id, 'hillbrow-community-health-centre');
-  assert.match(routineClinic.voiceResponse, /can't confirm tonight's availability/i);
+  assert.match(routineClinic.voiceResponse, /call first to check what is available tonight/i);
 });
 
 test('a child needing shelter tonight is routed to child safety, not an office-hours adult path', () => {
@@ -959,6 +959,22 @@ test('demo coordination is limited to the exact resource and action offered for 
   const accepted = coordinateJoziSupport({ ...common, action: 'appointment_request' });
   assert.equal(accepted.success, true);
   assert.equal(accepted.action, 'appointment_request');
+});
+
+test('demo coordination requires a new caller turn and explicit yes when enforced', () => {
+  const common = {
+    resource_id: 'hillbrow-community-health-centre',
+    action: 'appointment_request',
+    offered_resource_ids: ['hillbrow-community-health-centre'],
+    require_offered_resource: true,
+    required_action: 'appointment_request',
+    require_offered_action: true,
+    require_confirmed_consent: true,
+    demo_enabled: true
+  };
+  assert.equal(coordinateJoziSupport({ ...common, consent_confirmed: false, caller_answered_after_offer: true }).error, 'explicit_demo_consent_required');
+  assert.equal(coordinateJoziSupport({ ...common, consent_confirmed: true, caller_answered_after_offer: false }).error, 'explicit_demo_consent_required');
+  assert.equal(coordinateJoziSupport({ ...common, consent_confirmed: true, caller_answered_after_offer: true }).success, true);
 });
 
 test('all resolver paths are deterministic and network-free', () => {
