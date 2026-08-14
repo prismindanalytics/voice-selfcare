@@ -34,7 +34,7 @@ export function extractTwilioCallSidFromSipHeaders(headers) {
         .map((header) => [header.name, header.value])
     : Object.entries(headers || {});
   const values = entries
-    .filter(([name]) => canonicalHeaderName(name) === 'xtwilioparentcallsid')
+    .filter(([name]) => canonicalHeaderName(name) === 'xprismindcallid')
     .flatMap(([, value]) => Array.isArray(value) ? value : [value])
     .map((value) => String(value || '').trim())
     .filter(Boolean);

@@ -72,22 +72,22 @@ test('only one valid custom Twilio CallSid header can select a stored profile', 
 
   assert.equal(lineRouting.extractTwilioCallSidFromSipHeaders([
     { name: 'From', value: 'sip:+12065550123@example.com' },
-    { name: 'X-Twilio-ParentCallSid', value: callSid },
+    { name: 'X-Prismind-Call-Id', value: callSid },
     { name: 'Call-ID', value: 'not-the-provider-call-sid' }
   ]), callSid);
   assert.equal(lineRouting.extractTwilioCallSidFromSipHeaders([
-    { name: 'SipHeader_X_Twilio_ParentCallSid', value: callSid }
+    { name: 'SipHeader_X_Prismind_Call_Id', value: callSid }
   ]), callSid);
 
   assert.equal(lineRouting.extractTwilioCallSidFromSipHeaders([
     { name: 'Call-ID', value: callSid }
   ]), null);
   assert.equal(lineRouting.extractTwilioCallSidFromSipHeaders([
-    { name: 'X-Twilio-ParentCallSid', value: 'CA-too-short' }
+    { name: 'X-Prismind-Call-Id', value: 'CA-too-short' }
   ]), null);
   assert.equal(lineRouting.extractTwilioCallSidFromSipHeaders([
-    { name: 'X-Twilio-ParentCallSid', value: callSid },
-    { name: 'x_twilio_parent_call_sid', value: 'CAffffffffffffffffffffffffffffffff' }
+    { name: 'X-Prismind-Call-Id', value: callSid },
+    { name: 'x_prismind_call_id', value: 'CAffffffffffffffffffffffffffffffff' }
   ]), null);
   assert.equal(lineRouting.extractTwilioCallSidFromSipHeaders([]), null);
 });

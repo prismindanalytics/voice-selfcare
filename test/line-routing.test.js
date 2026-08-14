@@ -29,7 +29,7 @@ test('caller identity uses the exact SIP From header and never the destination n
   const toFirst = [
     { name: 'To', value: 'sip:+14255173281@sip.example.com' },
     { name: 'From', value: 'sip:+12065550123@sip.example.com' },
-    { name: 'X-Twilio-ParentCallSid', value: 'CA0123456789abcdef0123456789abcdef' }
+    { name: 'X-Prismind-Call-Id', value: 'CA0123456789abcdef0123456789abcdef' }
   ];
   assert.equal(extractCallerPhoneFromSipHeaders(toFirst), '+12065550123');
   assert.equal(extractCallerPhoneFromSipHeaders({ TO: 'sip:+14255173281@example.com', FROM: 'tel:+27821234567' }), '+27821234567');

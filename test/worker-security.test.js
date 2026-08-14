@@ -84,7 +84,8 @@ test('Jozi mode refuses unsigned OpenAI webhooks', () => {
 
 test('Twilio CallSid binds a signed incoming OpenAI call to one line profile', () => {
   assert.match(workerSource, /setCallProfile\(callSid, \{/);
-  assert.match(workerSource, /x-twilio-parentcallsid/);
+  assert.match(workerSource, /x-prismind-call-id/);
+  assert.doesNotMatch(workerSource, /x-twilio-parentcallsid/i);
   assert.match(workerSource, /getCallProfile\(providerCallId\)/);
   assert.match(workerSource, /Rejecting call without one trusted, enabled line profile/);
   assert.match(workerSource, /rejectOpenAICall\(env, callId\)/);

@@ -1361,7 +1361,9 @@ async function handleTwilioVoice(request, env, options = {}) {
 
   const projectId = requireEnv(env, 'OPENAI_PROJECT_ID');
   const origin = new URL(request.url).origin;
-  const sipHeaders = { 'x-twilio-parentcallsid': callSid };
+  // Twilio reserves the X-Twilio-* namespace. Use our own extension header so
+  // the provider CallSid reaches the signed OpenAI webhook for profile lookup.
+  const sipHeaders = { 'x-prismind-call-id': callSid };
   const sipUri = buildOpenAISipUri(projectId, sipHeaders);
   const codec = options.forcedCodec || env.TWILIO_SIP_CODECS || mapG711ToSip(env.TELEPHONY_CODEC);
   const codecsAttr = codec ? ` codecs="${escapeXml(codec)}"` : '';
