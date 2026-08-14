@@ -637,13 +637,32 @@ export class CallSession extends DurableObject {
         case 'find_support_services':
           {
             const pendingContext = this.getMetaJson('jozi_pending_lookup_context') || {};
+            const cityFallbackOffer = this.getMetaJson('jozi_city_fallback_offer') || {};
+            const callerAnsweredCityOffer = Number(this.getMeta('patient_turn_seq') || 0) >
+              Number(cityFallbackOffer.patient_turn_seq ?? Number.POSITIVE_INFINITY);
             const contextualArgs = mergeJoziSupportContext(pendingContext, args);
+            const acceptedCityFallback = args.city_fallback_consent_confirmed === true &&
+              cityFallbackOffer.active === true &&
+              callerAnsweredCityOffer;
+            contextualArgs.allow_city_fallback = acceptedCityFallback;
+            if (acceptedCityFallback && cityFallbackOffer.fallback_need) {
+              contextualArgs.needs = [cityFallbackOffer.fallback_need];
+            }
             result = resolveJoziSupport({
               ...contextualArgs,
               demo_enabled: joziDemoEnabled(this.env)
             });
             this.setMeta('jozi_pending_lookup_context', JSON.stringify(
               buildJoziPendingLookupContext(contextualArgs, result)
+            ));
+            this.setMeta('jozi_city_fallback_offer', JSON.stringify(
+              result.awaiting === 'city_fallback_consent'
+                ? {
+                    active: true,
+                    fallback_need: result.city_fallback_need || '',
+                    patient_turn_seq: Number(this.getMeta('patient_turn_seq') || 0)
+                  }
+                : {}
             ));
           }
           {
@@ -746,6 +765,7 @@ export class CallSession extends DurableObject {
           if (modeIncludesJozi(serviceMode)) {
             this.setMeta('jozi_demo_consent_offer', '{}');
             this.setMeta('jozi_pending_lookup_context', '{}');
+            this.setMeta('jozi_city_fallback_offer', '{}');
           }
           result = modeIncludesJozi(serviceMode)
             ? resolveJoziSupport({
@@ -2860,6 +2880,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
           detail_requested: { type: 'string', enum: ['recommendation', 'phone', 'hours', 'address', 'directions'], description: 'Use the caller\'s current request so the verified response can give an exact phone number, hours, address, or directions without relying on model memory.' },
           safe_to_speak: { type: 'string', enum: ['yes', 'no', 'unknown'] },
           phone_type: { type: 'string', enum: ['mobile', 'landline', 'unknown'] },
+          city_fallback_consent_confirmed: { type: 'boolean', description: 'True only after the immediately preceding support result offered the City as the last option and the caller clearly said yes. Preserve the caller\'s earlier need and location. Never set this on the first lookup.' },
           max_options: { type: 'integer', minimum: 1, maximum: 2 }
         },
         required: ['needs', 'safety_context']

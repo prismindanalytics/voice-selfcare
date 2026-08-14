@@ -83,7 +83,9 @@ test('Hillbrow overnight-safe-space request routes to MES navigation, not a City
     safety_context: 'none'
   });
   assert.equal(result.success, true);
-  assert.deepEqual(ids(result), ['mes-johannesburg-navigation']);
+  assert.equal(result.options[0]?.id, 'mes-johannesburg-navigation');
+  assert.deepEqual(result.spoken_option_ids, ['mes-johannesburg-navigation']);
+  assert.doesNotMatch(ids(result).join(' '), /coj-/);
   assert.match(result.voiceResponse, /MES Johannesburg/i);
   assert.match(result.options[0].availability_note, /does not confirm a walk-in intake/i);
 });
@@ -359,7 +361,7 @@ test('broad urgent-time healthcare asks for a landmark and preserves emergency s
   }
 });
 
-test('women-and-children requests outside a listed shelter area retain a regional navigator', () => {
+test('women-and-children requests outside a listed shelter area require City last-option consent', () => {
   const result = resolveJoziSupport({
     needs: ['women_children_shelter'],
     location: 'Orlando East',
@@ -367,9 +369,19 @@ test('women-and-children requests outside a listed shelter area retain a regiona
     safe_to_speak: 'yes',
     safety_context: 'none'
   });
-  assert.equal(result.status, 'specialist_shelter_navigation_required');
-  assert.equal(result.options[0]?.id, 'coj-region-d-social-services');
+  assert.equal(result.awaiting, 'city_fallback_consent');
+  assert.deepEqual(result.options, []);
   assert.doesNotMatch(ids(result).join(' '), /frida|bienvenu/);
+
+  const consented = resolveJoziSupport({
+    needs: ['women_children_shelter'],
+    location: 'Orlando East',
+    audience: 'unknown',
+    safe_to_speak: 'yes',
+    safety_context: 'none',
+    allow_city_fallback: true
+  });
+  assert.equal(consented.options[0]?.id, 'coj-region-d-social-services');
 });
 
 test('broad-area sexual-assault requests retain a specialist phone route while asking for location', () => {
@@ -445,8 +457,10 @@ test('a third need that does not fit the two spoken slots is reported, not silen
     safety_context: 'none'
   });
   assert.ok(ids(child).includes('childline-116'));
-  assert.ok(child.deferred_needs.includes('healthcare'));
-  assert.match(child.voiceResponse, /come back to .*healthcare next/i);
+  assert.ok(ids(child).includes('hillbrow-community-health-centre'));
+  assert.deepEqual(child.uncovered_needs, []);
+  assert.deepEqual(child.deferred_needs, ['shelter_navigation']);
+  assert.match(child.voiceResponse, /come back to .*healthcare.*shelter navigation next/i);
   assert.doesNotMatch(child.voiceResponse, /voice response|limited to two routes/i);
 
   const adult = resolveJoziSupport({
@@ -615,9 +629,10 @@ test('mixed requests retain regional navigation for an unmatched shelter or safe
     audience: 'adult',
     safety_context: 'none'
   });
-  assert.deepEqual(ids(safeSpaceAndCrisis), ['sadag-suicide-crisis', 'coj-region-d-social-services']);
+  assert.deepEqual(ids(safeSpaceAndCrisis), ['sadag-suicide-crisis', 'joburg-homelessness-network']);
+  assert.deepEqual(safeSpaceAndCrisis.uncovered_needs, []);
   assert.match(safeSpaceAndCrisis.voiceResponse, /SADAG Suicide Crisis Helpline/);
-  assert.match(safeSpaceAndCrisis.voiceResponse, /come back to a safe-space pathway next/i);
+  assert.match(safeSpaceAndCrisis.voiceResponse, /safe-space pathway/i);
   assert.doesNotMatch(safeSpaceAndCrisis.voiceResponse, /Region D Social Development/);
 });
 
@@ -630,7 +645,8 @@ test('unknown audience for a women-and-children request does not hide a critical
     safety_context: 'none'
   });
   assert.ok(ids(crisis).includes('sadag-suicide-crisis'));
-  assert.ok(ids(crisis).includes('coj-region-d-social-services'));
+  assert.doesNotMatch(ids(crisis).join(' '), /coj-region-d-social-services/);
+  assert.ok(crisis.uncovered_needs.includes('women_children_shelter'));
 
   const childSafety = resolveJoziSupport({
     needs: ['women_children_shelter', 'child_safety'],
@@ -679,7 +695,7 @@ test('after-hours specialist care puts a published 24-hour route first', () => {
     safe_to_speak: 'yes',
     safety_context: 'none'
   });
-  assert.deepEqual(ids(specialistAndShelter), ['nthabiseng-thuthuzela-care-centre', 'coj-general-services']);
+  assert.deepEqual(ids(specialistAndShelter), ['nthabiseng-thuthuzela-care-centre', 'joburg-homelessness-network']);
   assert.match(specialistAndShelter.voiceResponse, /Nthabiseng Thuthuzela Care Centre/);
   assert.doesNotMatch(specialistAndShelter.voiceResponse, /Hillbrow Clinical Forensic/);
 

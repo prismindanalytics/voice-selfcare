@@ -268,7 +268,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     id: 'joburg-homelessness-network',
     name: 'Johannesburg Homelessness Network',
     primaryCategories: ['homelessness_network'],
-    navigationCategories: ['shelter_navigation', 'food', 'hygiene', 'employment', 'social_support'],
+    navigationCategories: ['shelter_navigation', 'safe_space_navigation', 'food', 'hygiene', 'employment', 'social_support'],
     areas: ['johannesburg', 'citywide'],
     contactModes: ['phone'],
     routingMode: 'navigation_only',
@@ -457,7 +457,8 @@ export const JOZI_SUPPORT_RESOURCES = [
     id: 'childline-116',
     name: 'Childline South Africa',
     primaryCategories: ['child_safety'],
-    navigationCategories: ['family_support', 'emotional_support', 'abuse_support'],
+    navigationCategories: ['family_support', 'emotional_support', 'abuse_support', 'shelter_navigation', 'safe_space_navigation'],
+    allowNavigationMatch: true,
     areas: ['johannesburg', 'citywide', 'gauteng', 'south africa'],
     contactModes: ['phone'],
     routingMode: 'phone_only',
@@ -1420,6 +1421,20 @@ export const JOZI_SUPPORT_CATEGORIES = [
   'city_service_navigation'
 ];
 
+const CITY_LAST_RESORT_NEEDS = new Set([
+  'shelter_navigation',
+  'safe_space_navigation',
+  'social_support',
+  'social_relief',
+  'women_children_shelter',
+  'family_support',
+  'youth_support',
+  'older_person_support'
+]);
+
+const CITY_LAST_OPTION_QUESTION =
+  "I'm sorry—I haven't found a suitable partner service for that area. Would you like me to try the City support line as a last option?";
+
 const IMMEDIATE_SAFETY_CONTEXTS = new Set([
   'immediate_danger',
   'medical_emergency',
@@ -1472,6 +1487,7 @@ VOICE DELIVERY
 
 UNDERSTANDING NATURAL CONVERSATION
 - You own the conversation and the interpretation. Understand ordinary speech; never ask the caller to choose a service category or repeat a fact they already gave you.
+- Use your knowledge of Johannesburg language, landmarks, and ordinary requests to interpret the caller's context and choose the right verified support category. Your knowledge may guide interpretation, but it must never supply an unverified organisation, phone number, address, hours, or availability claim.
 - Carry forward every need, symptom, timing detail, audience detail, suburb, and landmark the caller has already stated anywhere in the call. After a safety follow-up, reuse the earlier facts when you call a tool.
 - Translate natural language into the tool categories yourself. Examples: coughing, feeling sick, needing a doctor, or asking for a clinic means healthcare; somewhere public to sit, a community centre, a library, or somewhere less isolated during the day means daytime_community_space; somewhere safe tonight plus something to eat means safe_space_navigation or shelter_navigation AND food.
 - Preserve multiple needs separately. Do not collapse shelter plus food into generic social_support, and do not replace a specific landmark with broad "Johannesburg".
@@ -1489,7 +1505,9 @@ HEALTH ROUTING
 
 ROUTING
 - Use find_support_services for all community-support destinations. Never invent a provider, phone number, address, hours, bed, meal, or eligibility rule.
-- For an eligible adult in Hillbrow or the inner city who needs shelter, somewhere safer, food, hygiene, documents, or practical homelessness support, start with MES Johannesburg. MES is Jozi My Jozi's partner pathway. Use City social services only when no suitable partner or specialist option matches, MES is outside the caller's area or audience, or the caller asks for the City.
+- For an eligible adult in Hillbrow or the inner city who needs shelter, somewhere safer, food, hygiene, documents, or practical homelessness support, start with MES Johannesburg. MES is Jozi My Jozi's partner pathway.
+- City general and regional social-service navigation is a true last option. Never choose or queue it merely because MES is outside the area, one field is missing, or a first lookup is uncertain. First use the full conversation to interpret the need and location, ask one useful clarification if needed, and try the verified partner or specialist options.
+- Use City navigation only when find_support_services says no suitable partner or specialist was found, asks permission to try the City as the last option, and the caller clearly says yes. Carry the earlier need and location into that retry. Concrete verified clinics, libraries, recreation centres, and emergency services are not generic City navigation and remain valid direct options.
 - If the caller asks what MES offers, use mes_services with mes_programme=overview. If they name Assessment Centre, Ekhaya, Ekuthuleni, Impilo, or GROW, pass that exact mes_programme and explain it one programme at a time. MES also includes youth and family support, food and social relief. Use the current MES branch number to confirm the right entrance and availability.
 - Treat an unqualified request for a "safe site", "safe place", or their plurals as ambiguous. Ask once, in plain language: "Do you need somewhere for tonight, a public place during the day, or urgent help because you're in danger now?" Then wait and carry the caller's earlier location into the next lookup. Tonight means safe_space_navigation, daytime means daytime_community_space, and danger now means handle_emergency. Never repeat the same clarification after the caller answers.
 - Recommend one best next step at a time. Give a second option only after the first is declined, unavailable, or completed, unless two distinct urgent needs must be addressed immediately.
@@ -1611,6 +1629,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       interpretedNeed
     ])];
   }
+  const allowCityFallback = args.allow_city_fallback === true || args.allowCityFallback === true;
   const coordinationPreference = normalizeCoordinationPreference(args.coordination_preference || args.coordinationPreference);
   const detailRequested = normalizeDetailRequested(args.detail_requested || args.detailRequested);
   const requestedMesProgrammeId = mesProgrammeResourceId(args.mes_programme || args.mesProgramme);
@@ -1758,7 +1777,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       'daytime_space_not_available_tonight',
       needs,
       args.location,
-      'The community places I have are for daytime, not overnight shelter. Do you need somewhere for tonight, immediate safety help, or a daytime place tomorrow?',
+      'I hear you. The community places I have are for daytime, not overnight shelter. Do you need somewhere for tonight, immediate safety help, or a daytime place tomorrow?',
       'safe_space_type'
     );
   }
@@ -1805,7 +1824,16 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       .slice(0, 2)
     : [];
 
-  let matched = rankJoziResources({ resources, needs, location, usefulLocation, audience, contactMode, timing });
+  let matched = rankJoziResources({
+    resources,
+    needs,
+    location,
+    usefulLocation,
+    audience,
+    contactMode,
+    timing,
+    allowCityFallback
+  });
 
   for (const resource of specialistPhoneCandidates) {
     for (const need of needs.filter((item) => specialistCareNeeds.includes(item) && resource.primaryCategories.includes(item))) {
@@ -1821,7 +1849,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     usefulLocation,
     audience,
     contactMode,
-    timing
+    timing,
+    allowCityFallback
   });
 
   if (needs.includes('mes_services') && requestedMesProgrammeId) {
@@ -1841,6 +1870,25 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     matched.sort((left, right) =>
       Number(right.resource.id === requestedMesProgrammeId) - Number(left.resource.id === requestedMesProgrammeId)
     );
+  }
+
+  const uncoveredCityFallbackNeeds = needs.filter((need) =>
+    CITY_LAST_RESORT_NEEDS.has(need) && !matched.some((candidate) => candidateMatchesNeed(candidate, need))
+  );
+  const cityFallbackNeed = highestPriorityNeed(uncoveredCityFallbackNeeds);
+  const highestUncoveredCityPriority = cityFallbackNeed ? needPriority(cityFallbackNeed) : -1;
+  const highestMatchedPriority = highestPriorityNeed(
+    needs.filter((need) => matched.some((candidate) => candidateMatchesNeed(candidate, need)))
+  );
+  const unmatchedShelterAudienceNeeded = audience === 'unknown' && uncoveredCityFallbackNeeds.some((need) =>
+    ['shelter_navigation', 'safe_space_navigation'].includes(need)
+  );
+  const cityFallbackAvailable = !allowCityFallback && contactMode !== 'online' && usefulLocation &&
+    uncoveredCityFallbackNeeds.length > 0 && !unmatchedShelterAudienceNeeded;
+  if (cityFallbackAvailable && (
+    matched.length === 0 || highestUncoveredCityPriority > needPriority(highestMatchedPriority)
+  )) {
+    return cityFallbackConsentResult(needs, locationInput, timing, cityFallbackNeed);
   }
 
   if (!matched.length) {
@@ -1871,7 +1919,25 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         'location'
       );
     }
-    if (contactMode !== 'online' && needs.includes('women_children_shelter')) {
+    if (audience === 'unknown' && needs.some((need) => ['shelter_navigation', 'safe_space_navigation'].includes(need))) {
+      return noMatch(
+        'shelter_audience_required',
+        needs,
+        locationInput,
+        'I hear you. Are you an adult on your own, an adult with children, or under 18?',
+        'audience'
+      );
+    }
+    if (supportLocationNeeded) {
+      return noMatch(
+        'specific_location_required',
+        needs,
+        locationInput,
+        'I can look for a suitable partner service. Which suburb or nearest landmark are you near?',
+        'location'
+      );
+    }
+    if (allowCityFallback && contactMode !== 'online' && needs.includes('women_children_shelter')) {
       const regionalNavigatorId = locationRegion(location) === 'region_d'
         ? 'coj-region-d-social-services'
         : 'coj-general-services';
@@ -1898,9 +1964,19 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       }
     }
     const fallback = resources.find((resource) => resource.id === 'coj-general-services');
-    const fallbackOption = contactMode !== 'online' && fallback && needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'social_support', 'social_relief'].includes(need))
+    const fallbackOption = allowCityFallback && contactMode !== 'online' && fallback && needs.some((need) => CITY_LAST_RESORT_NEEDS.has(need))
       ? [publicResource(fallback)]
       : [];
+    const cityFallbackAvailableWithoutMatch = !allowCityFallback && contactMode !== 'online' && usefulLocation &&
+      needs.some((need) => CITY_LAST_RESORT_NEEDS.has(need));
+    if (cityFallbackAvailableWithoutMatch) {
+      return cityFallbackConsentResult(
+        needs,
+        locationInput,
+        timing,
+        needs.find((need) => CITY_LAST_RESORT_NEEDS.has(need)) || ''
+      );
+    }
     const unknownNeedAwaiting = usefulLocation ? 'support_need' : 'location';
     return {
       success: false,
@@ -1965,6 +2041,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     supportLocationNeeded: supportLocationNeeded || daytimeLocationNeeded,
     uncoveredHealthNeeds,
     otherUncoveredNeeds,
+    cityFallbackAvailable: false,
     deferredNeeds,
     daytimeSpaceUnavailableTonight,
     coordinationPreference,
@@ -2019,6 +2096,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     next_need: conversation.nextNeed,
     awaiting: conversation.awaiting,
     suggested_demo_action: conversation.suggestedDemoAction,
+    city_fallback_available: false,
+    city_fallback_need: '',
     voiceResponse: conversation.voiceResponse
   };
 }
@@ -2188,6 +2267,12 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   const previousAudience = normalizeAudience(previous.audience || previous.caller_type);
   if (currentAudience === 'unknown' && previousAudience !== 'unknown') merged.audience = previousAudience;
 
+  const currentSafeToSpeak = normalizeSafeToSpeak(current.safe_to_speak || current.safeToSpeak);
+  const previousSafeToSpeak = normalizeSafeToSpeak(previous.safe_to_speak || previous.safeToSpeak);
+  if (currentSafeToSpeak === 'unknown' && previousSafeToSpeak !== 'unknown') {
+    merged.safe_to_speak = previousSafeToSpeak;
+  }
+
   const currentNeeds = current.needs || current.categories || current.service_types ||
     [current.service_type || current.category || current.need_type].filter(Boolean);
   const currentNeedValues = (Array.isArray(currentNeeds) ? currentNeeds : String(currentNeeds || '').split(','))
@@ -2196,6 +2281,15 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   const previousNeedValues = Array.isArray(previous.needs) ? previous.needs : [];
   const normalizedCurrentNeeds = currentNeedValues.flatMap(expandSupportCategory);
   const normalizedPreviousNeeds = previousNeedValues.flatMap(expandSupportCategory);
+  const continuationNeed = normalizeSupportCategory(previous.continuation_need || '');
+  const priorTurnNeeds = Array.isArray(previous.prior_needs)
+    ? previous.prior_needs.flatMap(expandSupportCategory)
+    : normalizedPreviousNeeds;
+  const continueSinglePendingNeed = Boolean(continuationNeed) && (
+    currentNeedValues.length === 0 ||
+    (normalizedCurrentNeeds.includes(continuationNeed) &&
+      normalizedCurrentNeeds.every((need) => priorTurnNeeds.includes(need)))
+  );
   const hasRawAmbiguousSafeNeed = currentNeedValues.some((need) =>
     /\bsafe\s+(?:sites?|places?)\b/.test(normalizeSearchText(need))
   );
@@ -2216,7 +2310,9 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   if (!currentSafeSiteType && previousSafeSiteType && (currentNeedValues.length === 0 || hasRawAmbiguousSafeNeed)) {
     merged.safe_site_type = previousSafeSiteType;
   }
-  if (hasRawAmbiguousSafeNeed && previousNeedValues.length) {
+  if (continueSinglePendingNeed) {
+    merged.needs = [continuationNeed];
+  } else if (hasRawAmbiguousSafeNeed && previousNeedValues.length) {
     merged.needs = [...new Set([...previousNeedValues, ...currentNeedValues])];
   } else if (currentNeedValues.length === 0 && previousNeedValues.length) {
     merged.needs = previous.needs;
@@ -2231,7 +2327,8 @@ export function buildJoziPendingLookupContext(args = {}, result = {}) {
     'safe_space_type',
     'safe_to_speak',
     'support_need',
-    'contact_mode'
+    'contact_mode',
+    'city_fallback_consent'
   ]);
   if (!clarificationAwaits.has(result.awaiting)) return {};
   return {
@@ -2241,8 +2338,13 @@ export function buildJoziPendingLookupContext(args = {}, result = {}) {
     audience: result.audience || args.audience || 'unknown',
     timing: result.timing || args.timing || '',
     phone_type: args.phone_type || 'unknown',
+    safe_to_speak: args.safe_to_speak || args.safeToSpeak || 'unknown',
     safe_site_type: args.safe_site_type || args.safeSiteType || '',
-    needs: Array.isArray(result.needs) ? result.needs : normalizeNeeds(args)
+    continuation_need: result.awaiting === 'support_need' ? result.next_need || '' : '',
+    prior_needs: Array.isArray(result.needs) ? result.needs : normalizeNeeds(args),
+    needs: result.awaiting === 'support_need' && result.next_need
+      ? [result.next_need]
+      : Array.isArray(result.needs) ? result.needs : normalizeNeeds(args)
   };
 }
 
@@ -2325,8 +2427,19 @@ function deriveUrgentSafetyContext(statedSafetyContext, needs) {
   return '';
 }
 
-function rankJoziResources({ resources, needs, location, usefulLocation, audience, contactMode, timing }) {
+function rankJoziResources({
+  resources,
+  needs,
+  location,
+  usefulLocation,
+  audience,
+  contactMode,
+  timing,
+  allowCityFallback = false
+}) {
+  const directCityRequest = allowCityFallback && needs.includes('city_service_navigation');
   return resources
+    .filter((resource) => !resource.fallbackOnly || directCityRequest)
     .filter((resource) => audienceMatches(resource, audience, needs))
     .filter((resource) => contactModeMatches(resource, contactMode))
     .filter((resource) => timingAllowsResource(resource, timing))
@@ -2349,14 +2462,40 @@ function rankJoziResources({ resources, needs, location, usefulLocation, audienc
     );
 }
 
-function augmentUncoveredNeedCandidates({ matched, resources, needs, location, usefulLocation, audience, contactMode, timing }) {
+function augmentUncoveredNeedCandidates({
+  matched,
+  resources,
+  needs,
+  location,
+  usefulLocation,
+  audience,
+  contactMode,
+  timing,
+  allowCityFallback = false
+}) {
   const augmented = matched.map((candidate) => ({ ...candidate, coveredNeeds: [...(candidate.coveredNeeds || [])] }));
   const orderedNeeds = [...needs].sort((left, right) => needPriority(right) - needPriority(left));
 
   for (const need of orderedNeeds) {
     if (augmented.some((candidate) => candidateMatchesNeed(candidate, need))) continue;
 
-    if (contactMode !== 'online' && ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter', 'social_support', 'social_relief'].includes(need)) {
+    if (contactMode === 'in_person' && !augmented.some((candidate) => candidateMatchesNeed(candidate, need))) {
+      const phoneCandidate = rankJoziResources({
+        resources,
+        needs: [need],
+        location,
+        usefulLocation,
+        audience,
+        contactMode: 'phone',
+        timing,
+        allowCityFallback: false
+      }).find(({ resource }) => resource.contactModes.length === 1 && resource.contactModes[0] === 'phone');
+      if (phoneCandidate) addCoveredCandidate(augmented, phoneCandidate, need);
+    }
+
+    if (allowCityFallback && contactMode !== 'online' &&
+      !augmented.some((candidate) => candidateMatchesNeed(candidate, need)) &&
+      CITY_LAST_RESORT_NEEDS.has(need)) {
       const region = locationRegion(location);
       const navigatorId = timing === 'tonight'
         ? 'coj-general-services'
@@ -2367,19 +2506,6 @@ function augmentUncoveredNeedCandidates({ matched, resources, needs, location, u
             : 'coj-general-services';
       const navigator = resources.find((resource) => resource.id === navigatorId);
       if (navigator) addCoveredCandidate(augmented, { resource: navigator }, need);
-    }
-
-    if (contactMode === 'in_person' && !augmented.some((candidate) => candidateMatchesNeed(candidate, need))) {
-      const phoneCandidate = rankJoziResources({
-        resources,
-        needs: [need],
-        location,
-        usefulLocation,
-        audience,
-        contactMode: 'phone',
-        timing
-      }).find(({ resource }) => resource.contactModes.length === 1 && resource.contactModes[0] === 'phone');
-      if (phoneCandidate) addCoveredCandidate(augmented, phoneCandidate, need);
     }
   }
 
@@ -2491,6 +2617,12 @@ function needPriority(need) {
   return 10;
 }
 
+function highestPriorityNeed(needs = []) {
+  return needs.reduce((best, need) =>
+    !best || needPriority(need) > needPriority(best) ? need : best
+  , '');
+}
+
 function resourceMatchesNeed(resource, need) {
   if (resource.primaryCategories.includes(need)) return true;
   if (need === 'medication' && resource.primaryCategories.includes('healthcare')) return true;
@@ -2562,6 +2694,7 @@ function locationAllowsResource(resource, location, usefulLocation) {
 function timingAllowsResource(resource, timing) {
   if (timing !== 'tonight') return true;
   if (isPublished24Hour(resource)) return true;
+  if (resource.routingMode === 'navigation_only' && !resource.fallbackOnly) return true;
   return resource.id === 'mes-johannesburg-navigation' ||
     resource.primaryCategories.includes('women_children_shelter') ||
     resource.primaryCategories.includes('healthcare');
@@ -2747,6 +2880,7 @@ function buildConversationalSupportResponse({
   supportLocationNeeded,
   uncoveredHealthNeeds,
   otherUncoveredNeeds,
+  cityFallbackAvailable,
   deferredNeeds,
   daytimeSpaceUnavailableTonight,
   coordinationPreference,
@@ -2831,11 +2965,17 @@ function buildConversationalSupportResponse({
     awaiting = 'location';
     const emergencyCheck = ['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : '';
     question = `${emergencyCheck}What nearby neighbourhood, clinic, or landmark should I use?`;
-  } else if (otherUncoveredNeeds.length) {
-    awaiting = contactMode === 'online' ? 'contact_mode' : 'location';
+  } else if (otherUncoveredNeeds.length && !waitingNeeds.length && !deferredNeeds.length) {
+    awaiting = contactMode === 'online'
+      ? 'contact_mode'
+      : cityFallbackAvailable
+        ? 'city_fallback_consent'
+        : 'support_need';
     question = contactMode === 'online'
       ? `I have not found verified online help for ${otherUncoveredNeeds.map(humanSupportNeed).join(' and ')}. Would a phone or in-person route work instead?`
-      : `I have not found local help for ${otherUncoveredNeeds.map(humanSupportNeed).join(' and ')} yet. What nearby area should I try next?`;
+      : cityFallbackAvailable
+        ? CITY_LAST_OPTION_QUESTION
+      : `I still need to handle ${otherUncoveredNeeds.map(humanSupportNeed).join(' and ')}. Would you like me to take that next?`;
   } else if (supportLocationNeeded) {
     awaiting = 'location';
     question = 'Which suburb or nearest landmark are you near?';
@@ -2866,7 +3006,8 @@ function buildConversationalSupportResponse({
     voiceResponse: sentences.filter(Boolean).join(' '),
     spokenOptionIds: first ? [first.id] : [],
     pendingOptionIds: allOptionIds.filter((id) => id !== first?.id),
-    nextNeed: waitingNeeds[0] || deferredNeeds[0] || uncoveredHealthNeeds[0] || otherUncoveredNeeds[0] || '',
+    nextNeed: highestPriorityNeed([...waitingNeeds, ...deferredNeeds]) ||
+      highestPriorityNeed([...uncoveredHealthNeeds, ...otherUncoveredNeeds]),
     awaiting,
     suggestedDemoAction
   };
@@ -2971,15 +3112,31 @@ function humanSupportNeed(value) {
   return labels[value] || String(value || 'that need').replace(/_/g, ' ');
 }
 
+function cityFallbackConsentResult(needs, location, timing, fallbackNeed) {
+  return {
+    ...noMatch(
+      'city_last_resort_consent_required',
+      needs,
+      location,
+      CITY_LAST_OPTION_QUESTION,
+      'city_fallback_consent'
+    ),
+    city_fallback_available: true,
+    city_fallback_need: fallbackNeed,
+    next_need: fallbackNeed,
+    timing
+  };
+}
+
 function noMatch(error, needs, location, voiceResponse, awaiting = 'support_need') {
   return {
     success: false,
-    status: 'clarification_required',
+    status: awaiting === 'audience' ? 'audience_clarification_required' : 'clarification_required',
     error,
     needs,
     location: location || '',
     needsMoreLocation: awaiting === 'location',
-    needsMoreAudience: false,
+    needsMoreAudience: awaiting === 'audience',
     options: [],
     spoken_option_ids: [],
     pending_option_ids: [],

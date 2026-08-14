@@ -294,7 +294,8 @@ test('pending clarification preserves urgent timing and needs against model defa
   assert.equal(routineDefault.timing, 'tonight');
   const afterRoutineDefault = resolveJoziSupport(routineDefault);
   assert.equal(afterRoutineDefault.timing, 'tonight');
-  assert.equal(afterRoutineDefault.options[0]?.id, 'coj-general-services');
+  assert.equal(afterRoutineDefault.options[0]?.id, 'joburg-homelessness-network');
+  assert.equal(afterRoutineDefault.awaiting, 'detail_preference');
 
   const explicitCurrentTiming = mergeJoziSupportContext(
     { timing: 'tonight', location: 'Joubert Park', audience: 'adult' },

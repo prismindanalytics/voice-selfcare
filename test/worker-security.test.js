@@ -104,6 +104,32 @@ test('Jozi clarification context is retained only for the pending lookup and eme
   assert.match(emergencyCase, /setMeta\('jozi_pending_lookup_context', '\{\}'\)/);
 });
 
+test('City last-option routing requires a later explicit caller turn', () => {
+  const lookupStart = workerSource.indexOf("case 'find_support_services':");
+  const lookupEnd = workerSource.indexOf("case 'coordinate_support_demo':", lookupStart);
+  const lookupCase = workerSource.slice(lookupStart, lookupEnd);
+  assert.match(lookupCase, /jozi_city_fallback_offer/);
+  assert.match(lookupCase, /city_fallback_consent_confirmed/);
+  assert.match(lookupCase, /patient_turn_seq/);
+  assert.match(lookupCase, /callerAnsweredCityOffer/);
+  assert.match(lookupCase, /acceptedCityFallback/);
+  assert.match(lookupCase, /fallback_need/);
+  assert.match(lookupCase, /fallback_need: result\.city_fallback_need \|\| ''/);
+  assert.doesNotMatch(lookupCase, /fallback_need: result\.next_need/);
+  assert.match(lookupCase, /contextualArgs\.needs = \[cityFallbackOffer\.fallback_need\]/);
+  assert.match(lookupCase, /allow_city_fallback/);
+
+  const toolStart = workerSource.indexOf("name: 'find_support_services'");
+  const toolEnd = workerSource.indexOf("name: 'coordinate_support_demo'", toolStart);
+  const supportTool = workerSource.slice(toolStart, toolEnd);
+  assert.match(supportTool, /city_fallback_consent_confirmed/);
+  assert.match(supportTool, /Never set this on the first lookup/);
+
+  const emergencyStart = workerSource.indexOf("case 'handle_emergency':");
+  const emergencyEnd = workerSource.indexOf('default:', emergencyStart);
+  assert.match(workerSource.slice(emergencyStart, emergencyEnd), /setMeta\('jozi_city_fallback_offer', '\{\}'\)/);
+});
+
 test('emergency routing can be called for fire or violence without inventing symptoms', () => {
   const start = workerSource.indexOf("name: 'handle_emergency'");
   const end = workerSource.indexOf('const supportTools', start);
