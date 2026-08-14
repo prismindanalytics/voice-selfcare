@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   JOZI_SUPPORT_RESOURCES,
+  buildJoziPendingLookupContext,
+  mergeJoziSupportContext,
   resolveJoziSupport
 } from '../src/jozi-support.js';
 
@@ -48,6 +50,423 @@ function assertNoProviderMetadata(result) {
     /MES Johannesburg|City of Johannesburg General Services|011 725 6531|0860 562 874|Kapteijn Street/i
   );
 }
+
+test('unqualified safe-site wording asks one bounded question instead of looping on location', () => {
+  for (const need of [
+    'safe site',
+    'safe sites',
+    'safe site near me',
+    'identify the safe sites',
+    'where is a safe site',
+    'safe place',
+    'safe places',
+    'identify the safe places',
+    'where is a safe place'
+  ]) {
+    for (const location of ['', 'Hillbrow']) {
+      const result = resolveJoziSupport(routineArgs({
+        needs: [need],
+        location,
+        audience: 'unknown'
+      }));
+      assert.equal(result.status, 'safe_space_type_clarification_required', `${need} / ${location || 'blank'}`);
+      assert.equal(result.awaiting, 'safe_space_type', `${need} / ${location || 'blank'}`);
+      assert.equal(result.location, location);
+      assert.equal(result.needsMoreLocation, false);
+      assertNoProviderMetadata(result);
+      assert.match(result.voiceResponse, /somewhere for tonight.*public place during the day.*danger now/i);
+      assert.equal((result.voiceResponse.match(/\?/g) || []).length, 1);
+    }
+  }
+});
+
+test('safe-site clarification carries known location or audience into the next lookup', () => {
+  const withLocation = mergeJoziSupportContext(
+    { location: 'Joubert Park', audience: 'unknown', timing: 'tonight' },
+    { needs: ['safe_space_navigation'], audience: 'adult', safety_context: 'none', demo_enabled: true }
+  );
+  const afterAudience = resolveJoziSupport(withLocation);
+  assert.equal(afterAudience.options[0]?.id, MES_ID);
+  assert.notEqual(afterAudience.awaiting, 'location');
+
+  const withAudience = mergeJoziSupportContext(
+    { audience: 'adult', timing: 'tonight' },
+    { needs: ['safe_space_navigation'], location: 'Joubert Park', safety_context: 'none', demo_enabled: true }
+  );
+  const afterLocation = resolveJoziSupport(withAudience);
+  assert.equal(afterLocation.options[0]?.id, MES_ID);
+  assert.notEqual(afterLocation.awaiting, 'audience');
+
+  const emergency = resolveJoziSupport(mergeJoziSupportContext(
+    { location: 'Joubert Park', audience: 'adult', timing: 'tonight' },
+    { needs: ['safe_space_navigation'], safety_context: 'immediate_danger' }
+  ));
+  assert.equal(emergency.status, 'urgent_escalation');
+
+  const repeatedWordsAfterTonightAnswer = resolveJoziSupport(mergeJoziSupportContext(
+    { location: 'Joubert Park', audience: 'unknown', timing: 'routine' },
+    {
+      needs: ['identify the safe sites'],
+      safe_site_type: 'tonight',
+      audience: 'adult',
+      safety_context: 'none',
+      demo_enabled: true
+    }
+  ));
+  assert.equal(repeatedWordsAfterTonightAnswer.options[0]?.id, MES_ID);
+  assert.notEqual(repeatedWordsAfterTonightAnswer.awaiting, 'safe_space_type');
+
+  const repeatedWordsAfterDaytimeAnswer = resolveJoziSupport({
+    needs: ['safe sites near me'],
+    safe_site_type: 'daytime',
+    location: 'Hillbrow',
+    audience: 'adult',
+    safety_context: 'none'
+  });
+  assert.equal(repeatedWordsAfterDaytimeAnswer.options[0]?.id, 'hillbrow-recreation-centre');
+
+  const repeatedWordsAfterDangerAnswer = resolveJoziSupport({
+    needs: ['safe sites'],
+    safe_site_type: 'danger_now',
+    location: 'Hillbrow',
+    audience: 'adult',
+    safety_context: 'none'
+  });
+  assert.equal(repeatedWordsAfterDangerAnswer.status, 'urgent_escalation');
+
+  const childTonight = resolveJoziSupport({
+    needs: ['safe sites'],
+    safe_site_type: 'tonight',
+    location: 'Joubert Park',
+    audience: 'child',
+    safety_context: 'none'
+  });
+  assert.notEqual(childTonight.options[0]?.id, MES_ID);
+});
+
+test('safe-site clarification state completes across sparse multi-turn tool calls', () => {
+  const advance = (pending, args) => {
+    const contextualArgs = mergeJoziSupportContext(pending, args);
+    const result = resolveJoziSupport(contextualArgs);
+    return { result, pending: buildJoziPendingLookupContext(contextualArgs, result) };
+  };
+
+  let overnight = advance({}, {
+    needs: ['safe sites'],
+    location: 'Hillbrow',
+    audience: 'unknown',
+    safety_context: 'none'
+  });
+  assert.equal(overnight.result.awaiting, 'safe_space_type');
+  overnight = advance(overnight.pending, {
+    needs: ['safe sites'],
+    safe_site_type: 'tonight',
+    audience: 'unknown',
+    safety_context: 'none'
+  });
+  assert.equal(overnight.result.awaiting, 'audience');
+  assert.equal(overnight.pending.safe_site_type, 'tonight');
+  overnight = advance(overnight.pending, {
+    needs: ['safe sites'],
+    audience: 'adult',
+    safety_context: 'none',
+    demo_enabled: true
+  });
+  assert.equal(overnight.result.options[0]?.id, MES_ID);
+  assert.equal(overnight.result.awaiting, 'demo_action_consent');
+
+  let daytime = advance({}, {
+    needs: ['safe sites'],
+    audience: 'adult',
+    safety_context: 'none'
+  });
+  assert.equal(daytime.result.awaiting, 'safe_space_type');
+  daytime = advance(daytime.pending, {
+    needs: ['safe sites'],
+    safe_site_type: 'daytime',
+    safety_context: 'none'
+  });
+  assert.equal(daytime.result.awaiting, 'location');
+  assert.equal(daytime.pending.safe_site_type, 'daytime');
+  daytime = advance(daytime.pending, {
+    needs: ['safe sites'],
+    location: 'Hillbrow',
+    safety_context: 'none'
+  });
+  assert.equal(daytime.result.options[0]?.id, 'hillbrow-recreation-centre');
+  assert.notEqual(daytime.result.awaiting, 'safe_space_type');
+
+  let withFood = advance({}, {
+    needs: ['safe sites', 'food'],
+    location: 'Joubert Park',
+    audience: 'unknown',
+    safety_context: 'none'
+  });
+  assert.equal(withFood.result.awaiting, 'safe_space_type');
+  assert.ok(withFood.pending.needs.includes('food'));
+  withFood = advance(withFood.pending, {
+    needs: ['safe sites'],
+    safe_site_type: 'tonight',
+    audience: 'unknown',
+    safety_context: 'none',
+    demo_enabled: true
+  });
+  assert.equal(withFood.result.awaiting, 'audience');
+  assert.ok(withFood.pending.needs.includes('food'));
+  withFood = advance(withFood.pending, {
+    needs: [],
+    audience: 'adult',
+    timing: 'routine',
+    safety_context: 'none',
+    demo_enabled: true
+  });
+  assert.equal(withFood.result.options[0]?.id, MES_ID);
+  assert.ok(withFood.result.needs.includes('food'));
+
+  const daytimeCorrection = resolveJoziSupport({
+    needs: ['safe sites'],
+    safe_site_type: 'daytime',
+    timing: 'tonight',
+    location: 'Hillbrow',
+    audience: 'adult',
+    safety_context: 'none'
+  });
+  assert.equal(daytimeCorrection.options[0]?.id, 'hillbrow-recreation-centre');
+  assert.notEqual(daytimeCorrection.awaiting, 'safe_space_type');
+
+  const canonicalDaytimeCorrection = resolveJoziSupport({
+    needs: ['safe_space_navigation'],
+    safe_site_type: 'daytime',
+    timing: 'routine',
+    location: 'Hillbrow',
+    audience: 'adult',
+    safety_context: 'none'
+  });
+  assert.equal(canonicalDaytimeCorrection.options[0]?.id, 'hillbrow-recreation-centre');
+
+  const canonicalTonightCorrection = resolveJoziSupport({
+    needs: ['daytime_community_space'],
+    safe_site_type: 'tonight',
+    timing: 'routine',
+    location: 'Joubert Park',
+    audience: 'adult',
+    safety_context: 'none',
+    demo_enabled: true
+  });
+  assert.equal(canonicalTonightCorrection.options[0]?.id, MES_ID);
+});
+
+test('safe-site follow-ups ignore placeholder or broader model locations when a specific place is known', () => {
+  for (const currentLocation of ['unknown', 'not provided', 'Johannesburg']) {
+    const contextualArgs = mergeJoziSupportContext(
+      { location: 'Joubert Park', audience: 'unknown', timing: 'routine', safe_site_type: '' },
+      {
+        needs: ['safe sites'],
+        safe_site_type: 'tonight',
+        location: currentLocation,
+        audience: 'adult',
+        safety_context: 'none',
+        demo_enabled: true
+      }
+    );
+    assert.equal(contextualArgs.location, 'Joubert Park', currentLocation);
+    const result = resolveJoziSupport(contextualArgs);
+    assert.equal(result.options[0]?.id, MES_ID, currentLocation);
+    assert.notEqual(result.awaiting, 'location', currentLocation);
+  }
+});
+
+test('pending clarification preserves urgent timing and needs against model defaults', () => {
+  const routineDefault = mergeJoziSupportContext(
+    {
+      needs: ['safe_space_navigation'],
+      location: 'Orlando East',
+      audience: 'unknown',
+      timing: 'tonight'
+    },
+    {
+      needs: ['safe_space_navigation'],
+      audience: 'adult',
+      timing: 'routine',
+      safety_context: 'none'
+    }
+  );
+  assert.equal(routineDefault.timing, 'tonight');
+  const afterRoutineDefault = resolveJoziSupport(routineDefault);
+  assert.equal(afterRoutineDefault.timing, 'tonight');
+  assert.equal(afterRoutineDefault.options[0]?.id, 'coj-general-services');
+
+  const explicitCurrentTiming = mergeJoziSupportContext(
+    { timing: 'tonight', location: 'Joubert Park', audience: 'adult' },
+    { needs: ['safe_space_navigation'], timing: 'today', safety_context: 'none' }
+  );
+  assert.equal(explicitCurrentTiming.timing, 'today');
+
+  const sparseNeeds = mergeJoziSupportContext(
+    {
+      needs: ['safe_space_navigation'],
+      safe_site_type: 'tonight',
+      location: 'Joubert Park',
+      audience: 'unknown',
+      timing: 'tonight'
+    },
+    {
+      needs: [],
+      audience: 'adult',
+      safety_context: 'none',
+      demo_enabled: true
+    }
+  );
+  assert.deepEqual(sparseNeeds.needs, ['safe_space_navigation']);
+  const afterSparseNeeds = resolveJoziSupport(sparseNeeds);
+  assert.equal(afterSparseNeeds.options[0]?.id, MES_ID);
+  assert.notEqual(afterSparseNeeds.error, 'support_need_required');
+});
+
+test('a newer canonical safe-site answer overrides the pending interpretation', () => {
+  const tonightCorrection = mergeJoziSupportContext(
+    {
+      needs: ['daytime_community_space'],
+      safe_site_type: 'daytime',
+      audience: 'adult',
+      timing: 'today'
+    },
+    {
+      needs: ['safe_space_navigation'],
+      location: 'Hillbrow',
+      audience: 'adult',
+      timing: 'tonight',
+      safety_context: 'none',
+      demo_enabled: true
+    }
+  );
+  assert.equal(tonightCorrection.safe_site_type, undefined);
+  assert.equal(resolveJoziSupport(tonightCorrection).options[0]?.id, MES_ID);
+
+  const daytimeCorrection = mergeJoziSupportContext(
+    {
+      needs: ['safe_space_navigation'],
+      safe_site_type: 'tonight',
+      location: 'Joubert Park',
+      audience: 'adult',
+      timing: 'tonight'
+    },
+    {
+      needs: ['daytime_community_space'],
+      location: 'Hillbrow',
+      audience: 'adult',
+      timing: 'today',
+      safety_context: 'none'
+    }
+  );
+  assert.equal(daytimeCorrection.safe_site_type, undefined);
+  assert.equal(resolveJoziSupport(daytimeCorrection).options[0]?.id, 'hillbrow-recreation-centre');
+});
+
+test('an explicit scalar need starts the new path instead of restoring the pending safe-site need', () => {
+  const pending = {
+    needs: ['safe_space_navigation', 'food'],
+    safe_site_type: 'tonight',
+    location: 'Joubert Park',
+    audience: 'adult',
+    timing: 'tonight'
+  };
+  const healthcare = mergeJoziSupportContext(pending, {
+    needs: 'healthcare',
+    location: 'Hillbrow',
+    audience: 'adult',
+    timing: 'routine',
+    safety_context: 'none'
+  });
+  assert.equal(healthcare.needs, 'healthcare');
+  assert.equal(healthcare.safe_site_type, undefined);
+  assert.equal(healthcare.timing, 'routine');
+  assert.equal(resolveJoziSupport(healthcare).options[0]?.id, 'hillbrow-community-health-centre');
+
+  const daytime = mergeJoziSupportContext(pending, {
+    needs: 'daytime_community_space',
+    location: 'Hillbrow',
+    audience: 'adult',
+    timing: 'today',
+    safety_context: 'none'
+  });
+  assert.equal(daytime.needs, 'daytime_community_space');
+  assert.equal(daytime.safe_site_type, undefined);
+  assert.equal(resolveJoziSupport(daytime).options[0]?.id, 'hillbrow-recreation-centre');
+});
+
+test('natural safe-site clarification answers never repeat the same question', () => {
+  for (const safe_site_type of ['day', 'during day', 'in the day']) {
+    const result = resolveJoziSupport({
+      needs: ['safe sites'],
+      safe_site_type,
+      location: 'Hillbrow',
+      audience: 'adult',
+      safety_context: 'none'
+    });
+    assert.equal(result.options[0]?.id, 'hillbrow-recreation-centre', safe_site_type);
+    assert.notEqual(result.awaiting, 'safe_space_type', safe_site_type);
+  }
+  for (const safe_site_type of ['nighttime', 'at night', 'for the night', 'for tonight']) {
+    const result = resolveJoziSupport({
+      needs: ['safe sites'],
+      safe_site_type,
+      location: 'Joubert Park',
+      audience: 'adult',
+      safety_context: 'none'
+    });
+    assert.equal(result.options[0]?.id, MES_ID, safe_site_type);
+    assert.notEqual(result.awaiting, 'safe_space_type', safe_site_type);
+  }
+  for (const safe_site_type of ['danger', 'in danger', 'urgent help', 'unsafe now']) {
+    const result = resolveJoziSupport({
+      needs: ['safe sites'],
+      safe_site_type,
+      location: 'Hillbrow',
+      audience: 'adult',
+      safety_context: 'none'
+    });
+    assert.equal(result.status, 'urgent_escalation', safe_site_type);
+  }
+});
+
+test('critical and privacy-sensitive co-needs take precedence over safe-site clarification', () => {
+  const crisis = resolveJoziSupport(routineArgs({
+    needs: ['safe sites', 'mental_health_crisis'],
+    location: 'Hillbrow',
+    audience: 'adult'
+  }));
+  assert.equal(crisis.options[0]?.id, 'sadag-suicide-crisis');
+  assert.notEqual(crisis.awaiting, 'safe_space_type');
+
+  const gbv = resolveJoziSupport(routineArgs({
+    needs: ['safe sites', 'gbv_support'],
+    location: 'Hillbrow',
+    audience: 'adult',
+    safe_to_speak: 'no'
+  }));
+  assert.equal(gbv.status, 'unsafe_to_speak');
+  assert.equal(gbv.awaiting, 'end_or_continue');
+  assertNoProviderMetadata(gbv);
+
+  const child = resolveJoziSupport(routineArgs({
+    needs: ['safe sites', 'child_safety'],
+    location: 'Hillbrow',
+    audience: 'child'
+  }));
+  assert.equal(child.options[0]?.id, 'childline-116');
+  assert.notEqual(child.awaiting, 'safe_space_type');
+  assert.ok(!optionIds(child).includes(MES_ID));
+});
+
+test('an unknown need with a known location never asks for the location again', () => {
+  const result = resolveJoziSupport(routineArgs({
+    needs: ['something entirely new'],
+    location: 'Hillbrow'
+  }));
+  assert.equal(result.awaiting, 'support_need');
+  assert.doesNotMatch(result.voiceResponse, /what nearby area|which suburb|nearest landmark/i);
+});
 
 test('Journey 1 keeps MES first across plausible model classifications of safe tonight and food', () => {
   const needSets = [
@@ -486,6 +905,18 @@ test('MES programme questions return the current branch pathway and real named p
   assert.equal(childAdultProgramme.suggested_demo_action, '');
   assert.deepEqual(childAdultProgramme.options, []);
   assert.match(childAdultProgramme.voiceResponse, /won't direct a child or family into an adult-only programme/i);
+
+  for (const audience of ['family', 'child']) {
+    const overviewForAnyAudience = resolveJoziSupport(routineArgs({
+      needs: ['mes_services'],
+      mes_programme: 'overview',
+      audience,
+      location: 'Joubert Park'
+    }));
+    assert.equal(overviewForAnyAudience.options[0]?.id, MES_ID, audience);
+    assert.doesNotMatch(overviewForAnyAudience.voiceResponse, /adult-only programme/i, audience);
+    assert.match(overviewForAnyAudience.voiceResponse, /Assessment Centre.*Ekhaya.*Ekuthuleni.*Impilo.*GROW/i, audience);
+  }
 
   const directions = resolveJoziSupport(routineArgs({
     needs: ['shelter_navigation'],

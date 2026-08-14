@@ -1287,7 +1287,10 @@ const SUPPORT_CATEGORY_ALIASES = {
   homelessness: 'shelter_navigation',
   homeless_support: 'shelter_navigation',
   somewhere_safe: 'safe_space_navigation',
+  safe_site: 'safe_space_navigation',
+  safe_sites: 'safe_space_navigation',
   safe_place: 'safe_space_navigation',
+  safe_places: 'safe_space_navigation',
   safe_space: 'safe_space_navigation',
   safe_tonight: 'safe_space_navigation',
   somewhere_safe_tonight: 'safe_space_navigation',
@@ -1488,7 +1491,7 @@ ROUTING
 - Use find_support_services for all community-support destinations. Never invent a provider, phone number, address, hours, bed, meal, or eligibility rule.
 - For an eligible adult in Hillbrow or the inner city who needs shelter, somewhere safer, food, hygiene, documents, or practical homelessness support, start with MES Johannesburg. MES is Jozi My Jozi's partner pathway. Use City social services only when no suitable partner or specialist option matches, MES is outside the caller's area or audience, or the caller asks for the City.
 - If the caller asks what MES offers, use mes_services with mes_programme=overview. If they name Assessment Centre, Ekhaya, Ekuthuleni, Impilo, or GROW, pass that exact mes_programme and explain it one programme at a time. MES also includes youth and family support, food and social relief. Use the current MES branch number to confirm the right entrance and availability.
-- Clarify what "safe space" means: danger now, somewhere for tonight, a daytime support point, child/family safety, GBV support, or simply someone to talk to.
+- Treat an unqualified request for a "safe site", "safe place", or their plurals as ambiguous. Ask once, in plain language: "Do you need somewhere for tonight, a public place during the day, or urgent help because you're in danger now?" Then wait and carry the caller's earlier location into the next lookup. Tonight means safe_space_navigation, daytime means daytime_community_space, and danger now means handle_emergency. Never repeat the same clarification after the caller answers.
 - Recommend one best next step at a time. Give a second option only after the first is declined, unavailable, or completed, unless two distinct urgent needs must be addressed immediately.
 - Use progressive disclosure: first say the organisation and why it fits; then ask permission to check, book, or connect in the demo. If you speak a non-emergency phone number, offer to connect the caller now in the demo. Give directions or hours only when they are the next useful detail or the caller asks.
 - Say only the uncertainty that changes the next action, and say it once. Do not stack a description, phone number, address, hours, and every caveat into one turn.
@@ -1585,13 +1588,29 @@ export function validateJoziResources(resources = JOZI_SUPPORT_RESOURCES, now = 
 
 export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES) {
   let needs = normalizeNeeds(args);
+  const rawSafeSiteRequest = hasAmbiguousSafeSiteRequest(args);
   const demoEnabled = args.demo_enabled === true;
   const locationInput = selectCallerStatedLocation(args);
   let location = normalizeJoziLocation(locationInput);
   if (needs.includes('daytime_community_space') && location === 'orlando') location = 'orlando east';
   const audience = normalizeAudience(args.audience || args.caller_type);
   const contactMode = normalizeContactMode(args.contact_mode || args.contactMode);
-  const timing = normalizeTiming(args.timing || args.needed_when || args.urgency);
+  let timing = normalizeTiming(args.timing || args.needed_when || args.urgency);
+  const safeSiteType = normalizeSafeSiteType(args.safe_site_type || args.safeSiteType) ||
+    (rawSafeSiteRequest && timing === 'tonight' ? 'tonight' : '');
+  if (safeSiteType === 'tonight') timing = 'tonight';
+  if (safeSiteType === 'daytime' && timing === 'tonight') timing = 'today';
+  const hasCanonicalSafeSiteNeed = needs.some((need) => ['safe_space_navigation', 'daytime_community_space'].includes(need));
+  if ((rawSafeSiteRequest || hasCanonicalSafeSiteNeed) && ['tonight', 'daytime'].includes(safeSiteType)) {
+    const interpretedNeed = safeSiteType === 'daytime' ? 'daytime_community_space' : 'safe_space_navigation';
+    needs = [...new Set([
+      ...needs.filter((need) =>
+        !['safe_space_navigation', 'daytime_community_space'].includes(need) &&
+        !/(?:^|_)safe_(?:sites?|places?)(?:_|$)/.test(need)
+      ),
+      interpretedNeed
+    ])];
+  }
   const coordinationPreference = normalizeCoordinationPreference(args.coordination_preference || args.coordinationPreference);
   const detailRequested = normalizeDetailRequested(args.detail_requested || args.detailRequested);
   const requestedMesProgrammeId = mesProgrammeResourceId(args.mes_programme || args.mesProgramme);
@@ -1600,14 +1619,16 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     : undefined;
   const informationalMesProgrammeRequest = needs.length === 1 && needs[0] === 'mes_services' && Boolean(requestedMesResource);
   const statedSafetyContext = normalizeSupportCategory(args.safety_context || args.safetyContext || '');
-  const safetyContext = deriveUrgentSafetyContext(statedSafetyContext, needs);
+  const safetyContext = safeSiteType === 'danger_now'
+    ? 'immediate_danger'
+    : deriveUrgentSafetyContext(statedSafetyContext, needs);
 
   if (safetyContext) {
     return buildUrgentEscalation({ safetyContext, location, audience, resources, phoneType: args.phone_type || args.phoneType });
   }
 
   if (!needs.length) {
-    return noMatch('support_need_required', needs, args.location, 'What feels most urgent right now: safety, health, food, or someone to talk to?');
+    return noMatch('support_need_required', needs, args.location, 'What feels most urgent right now: safety, health, food, or someone to talk to?', 'support_need');
   }
 
   const safeToSpeak = normalizeSafeToSpeak(args.safe_to_speak || args.safeToSpeak);
@@ -1644,7 +1665,41 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     };
   }
 
-  if (informationalMesProgrammeRequest && audience === 'unknown' && !requestedMesResource.audiences.includes('unknown')) {
+  const criticalNeedBeforeSafeSiteClarification = needs.some((need) => [
+    'mental_health_crisis',
+    'suicide_support',
+    'child_safety',
+    'gbv_support',
+    'gbv_healthcare',
+    'sexual_assault_care',
+    'victim_friendly_healthcare',
+    'abuse_support',
+    'women_children_shelter'
+  ].includes(need));
+  if (rawSafeSiteRequest && !safeSiteType && !criticalNeedBeforeSafeSiteClarification) {
+    return {
+      success: false,
+      status: 'safe_space_type_clarification_required',
+      error: 'safe_space_type_required',
+      needs,
+      location: locationInput,
+      audience,
+      timing,
+      needsMoreLocation: false,
+      needsMoreAudience: false,
+      options: [],
+      availability_confirmed: false,
+      spoken_option_ids: [],
+      pending_option_ids: [],
+      next_need: 'safe_site',
+      awaiting: 'safe_space_type',
+      suggested_demo_action: '',
+      voiceResponse: "Do you need somewhere for tonight, a public place during the day, or urgent help because you're in danger now?"
+    };
+  }
+
+  const informationalMesOverviewRequest = requestedMesProgrammeId === 'mes-johannesburg-navigation';
+  if (informationalMesProgrammeRequest && !informationalMesOverviewRequest && audience === 'unknown' && !requestedMesResource.audiences.includes('unknown')) {
     return {
       success: false,
       status: 'audience_clarification_required',
@@ -1663,7 +1718,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     };
   }
 
-  if (informationalMesProgrammeRequest && audience !== 'unknown' && !audienceMatches(requestedMesResource, audience, needs)) {
+  if (informationalMesProgrammeRequest && !informationalMesOverviewRequest && audience !== 'unknown' && !audienceMatches(requestedMesResource, audience, needs)) {
     return {
       success: false,
       status: 'audience_not_supported',
@@ -1703,7 +1758,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       'daytime_space_not_available_tonight',
       needs,
       args.location,
-      'The community places I have are for daytime, not overnight shelter. Do you need somewhere for tonight, immediate safety help, or a daytime place tomorrow?'
+      'The community places I have are for daytime, not overnight shelter. Do you need somewhere for tonight, immediate safety help, or a daytime place tomorrow?',
+      'safe_space_type'
     );
   }
 
@@ -1793,7 +1849,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         'verified_online_support_not_found',
         needs,
         args.location,
-        'I have not found a verified online option for that need. Would you like a phone or in-person route instead?'
+        'I have not found a verified online option for that need. Would you like a phone or in-person route instead?',
+        'contact_mode'
       );
     }
     if (healthLocationNeeded) {
@@ -1801,7 +1858,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         'specific_location_required',
         needs,
         locationInput,
-        `I want to make sure I do not send you too far. ${['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : ''}Which Johannesburg or Soweto neighbourhood, clinic name, or nearest landmark should I use?`
+        `I want to make sure I do not send you too far. ${['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : ''}Which Johannesburg or Soweto neighbourhood, clinic name, or nearest landmark should I use?`,
+        'location'
       );
     }
     if (daytimeLocationNeeded) {
@@ -1809,7 +1867,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         'specific_location_required',
         needs,
         locationInput,
-        'I can find a real daytime community place. Which neighbourhood or nearest landmark are you near?'
+        'I can find a real daytime community place. Which neighbourhood or nearest landmark are you near?',
+        'location'
       );
     }
     if (contactMode !== 'online' && needs.includes('women_children_shelter')) {
@@ -1842,6 +1901,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     const fallbackOption = contactMode !== 'online' && fallback && needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'social_support', 'social_relief'].includes(need))
       ? [publicResource(fallback)]
       : [];
+    const unknownNeedAwaiting = usefulLocation ? 'support_need' : 'location';
     return {
       success: false,
       status: 'no_verified_local_match',
@@ -1854,13 +1914,15 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       spoken_option_ids: fallbackOption.map((option) => option.id),
       pending_option_ids: [],
       next_need: needs[0] || '',
-      awaiting: fallbackOption.length ? (demoEnabled ? 'demo_action_consent' : 'detail_preference') : 'location',
+      awaiting: fallbackOption.length ? (demoEnabled ? 'demo_action_consent' : 'detail_preference') : unknownNeedAwaiting,
       suggested_demo_action: fallbackOption.length && demoEnabled ? 'phone_connection' : '',
       voiceResponse: fallbackOption.length
         ? `I have not found a suitable local place yet. You can call ${fallbackOption[0].name} on ${fallbackOption[0].phone} for help finding the right service. ${demoEnabled ? 'Would you like me to connect you now in the demo?' : 'Would you like me to repeat the number?'}`
         : contactMode === 'online'
           ? 'I have not found a verified online option for that need. Would you like a phone or in-person route instead?'
-          : 'I have not found a suitable local option yet. What nearby area or another kind of help should I try?'
+          : usefulLocation
+            ? 'I have your area. Could you tell me whether you need safety, food, health support, or something else?'
+            : 'I have not found a suitable local option yet. What nearby area or another kind of help should I try?'
     };
   }
 
@@ -2107,6 +2169,95 @@ function normalizeNeeds(args) {
   const raw = args.needs || args.categories || args.service_types || [args.service_type || args.category || args.need_type];
   const values = Array.isArray(raw) ? raw : String(raw || '').split(',');
   return [...new Set(values.flatMap(expandSupportCategory).filter(Boolean))];
+}
+
+export function mergeJoziSupportContext(previous = {}, current = {}) {
+  const merged = { ...current };
+  const currentLocation = selectCallerStatedLocation(current);
+  const previousLocation = selectCallerStatedLocation(previous);
+  const currentLocationIsUseful = isUsefulJoziLocation(currentLocation);
+  const previousLocationIsUseful = isUsefulJoziLocation(previousLocation);
+
+  if (!currentLocationIsUseful && previousLocationIsUseful) {
+    merged.location = previous.location || previousLocation;
+    if (previous.landmark) merged.landmark = previous.landmark;
+    if (previous.area) merged.area = previous.area;
+  }
+
+  const currentAudience = normalizeAudience(current.audience || current.caller_type);
+  const previousAudience = normalizeAudience(previous.audience || previous.caller_type);
+  if (currentAudience === 'unknown' && previousAudience !== 'unknown') merged.audience = previousAudience;
+
+  const currentNeeds = current.needs || current.categories || current.service_types ||
+    [current.service_type || current.category || current.need_type].filter(Boolean);
+  const currentNeedValues = (Array.isArray(currentNeeds) ? currentNeeds : String(currentNeeds || '').split(','))
+    .map((need) => String(need || '').trim())
+    .filter(Boolean);
+  const previousNeedValues = Array.isArray(previous.needs) ? previous.needs : [];
+  const normalizedCurrentNeeds = currentNeedValues.flatMap(expandSupportCategory);
+  const normalizedPreviousNeeds = previousNeedValues.flatMap(expandSupportCategory);
+  const hasRawAmbiguousSafeNeed = currentNeedValues.some((need) =>
+    /\bsafe\s+(?:sites?|places?)\b/.test(normalizeSearchText(need))
+  );
+  const continuesPendingNeed = currentNeedValues.length === 0 || hasRawAmbiguousSafeNeed ||
+    normalizedCurrentNeeds.some((need) => normalizedPreviousNeeds.includes(need));
+
+  const currentTimingRaw = String(current.timing || current.needed_when || current.urgency || '').trim();
+  const previousTiming = normalizeTiming(previous.timing || previous.needed_when || previous.urgency);
+  const currentTiming = normalizeTiming(currentTimingRaw);
+  if (continuesPendingNeed && previous.timing && (!currentTimingRaw || (currentTiming === 'routine' && previousTiming !== 'routine'))) {
+    merged.timing = previousTiming;
+  }
+  if ((!current.phone_type || current.phone_type === 'unknown') && previous.phone_type && previous.phone_type !== 'unknown') {
+    merged.phone_type = previous.phone_type;
+  }
+  const currentSafeSiteType = current.safe_site_type || current.safeSiteType;
+  const previousSafeSiteType = previous.safe_site_type || previous.safeSiteType;
+  if (!currentSafeSiteType && previousSafeSiteType && (currentNeedValues.length === 0 || hasRawAmbiguousSafeNeed)) {
+    merged.safe_site_type = previousSafeSiteType;
+  }
+  if (hasRawAmbiguousSafeNeed && previousNeedValues.length) {
+    merged.needs = [...new Set([...previousNeedValues, ...currentNeedValues])];
+  } else if (currentNeedValues.length === 0 && previousNeedValues.length) {
+    merged.needs = previous.needs;
+  }
+  return merged;
+}
+
+export function buildJoziPendingLookupContext(args = {}, result = {}) {
+  const clarificationAwaits = new Set([
+    'audience',
+    'location',
+    'safe_space_type',
+    'safe_to_speak',
+    'support_need',
+    'contact_mode'
+  ]);
+  if (!clarificationAwaits.has(result.awaiting)) return {};
+  return {
+    location: args.location || result.location || '',
+    landmark: args.landmark || '',
+    area: args.area || '',
+    audience: result.audience || args.audience || 'unknown',
+    timing: result.timing || args.timing || '',
+    phone_type: args.phone_type || 'unknown',
+    safe_site_type: args.safe_site_type || args.safeSiteType || '',
+    needs: Array.isArray(result.needs) ? result.needs : normalizeNeeds(args)
+  };
+}
+
+function hasAmbiguousSafeSiteRequest(args = {}) {
+  const raw = args.needs || args.categories || args.service_types || [args.service_type || args.category || args.need_type];
+  const values = Array.isArray(raw) ? raw : String(raw || '').split(',');
+  return values.some((value) => /\bsafe\s+(?:sites?|places?)\b/.test(normalizeSearchText(value)));
+}
+
+function normalizeSafeSiteType(value) {
+  const normalized = normalizeSupportCategory(value || '');
+  if (['tonight', 'for_tonight', 'overnight', 'night', 'nighttime', 'at_night', 'in_the_night', 'for_the_night'].includes(normalized)) return 'tonight';
+  if (['day', 'daytime', 'day_time', 'during_day', 'during_the_day', 'in_the_day', 'public_place', 'community_place'].includes(normalized)) return 'daytime';
+  if (['danger', 'danger_now', 'in_danger', 'immediate_danger', 'urgent_danger', 'urgent_help', 'unsafe_now', 'not_safe_now', 'emergency'].includes(normalized)) return 'danger_now';
+  return '';
 }
 
 function expandSupportCategory(value) {
@@ -2820,14 +2971,21 @@ function humanSupportNeed(value) {
   return labels[value] || String(value || 'that need').replace(/_/g, ' ');
 }
 
-function noMatch(error, needs, location, voiceResponse) {
+function noMatch(error, needs, location, voiceResponse, awaiting = 'support_need') {
   return {
     success: false,
     status: 'clarification_required',
     error,
     needs,
     location: location || '',
+    needsMoreLocation: awaiting === 'location',
+    needsMoreAudience: false,
     options: [],
+    spoken_option_ids: [],
+    pending_option_ids: [],
+    next_need: needs[0] || '',
+    awaiting,
+    suggested_demo_action: '',
     voiceResponse
   };
 }

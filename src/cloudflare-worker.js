@@ -2,8 +2,10 @@ import { DurableObject } from 'cloudflare:workers';
 import {
   JOZI_SUPPORT_CATEGORIES,
   JOZI_SUPPORT_INSTRUCTIONS,
+  buildJoziPendingLookupContext,
   buildServiceGreeting,
   coordinateJoziSupport,
+  mergeJoziSupportContext,
   modeIncludesJozi,
   normalizeServiceMode,
   resolveJoziSupport,
@@ -120,6 +122,7 @@ const JOZI_ACTION_RESPONSE_INSTRUCTIONS = [
   'Never claim a real bed, meal, appointment, clinician, transfer, or service is confirmed unless the result explicitly says confirmed true.',
   'For a demo coordination result, lead positively with the completed demo action. Then say the short built-in sentence explaining that the demo is not connected to the external service. Do not preface the action with a limitation.',
   'For urgent_escalation, give the first emergency number immediately, ask for the nearest landmark, and do not continue ordinary directory search.',
+  'If the result is awaiting clarification, ask its one question once and wait for a new caller turn. Do not call find_support_services again until the caller provides new information.',
   'Do not add a long recap.'
 ].join(' ');
 
@@ -632,10 +635,17 @@ export class CallSession extends DurableObject {
           break;
 
         case 'find_support_services':
-          result = resolveJoziSupport({
-            ...args,
-            demo_enabled: joziDemoEnabled(this.env)
-          });
+          {
+            const pendingContext = this.getMetaJson('jozi_pending_lookup_context') || {};
+            const contextualArgs = mergeJoziSupportContext(pendingContext, args);
+            result = resolveJoziSupport({
+              ...contextualArgs,
+              demo_enabled: joziDemoEnabled(this.env)
+            });
+            this.setMeta('jozi_pending_lookup_context', JSON.stringify(
+              buildJoziPendingLookupContext(contextualArgs, result)
+            ));
+          }
           {
             const consentResourceId = result.awaiting === 'demo_action_consent'
               ? result.spoken_option_ids?.[0] || ''
@@ -733,6 +743,10 @@ export class CallSession extends DurableObject {
           break;
 
         case 'handle_emergency':
+          if (modeIncludesJozi(serviceMode)) {
+            this.setMeta('jozi_demo_consent_offer', '{}');
+            this.setMeta('jozi_pending_lookup_context', '{}');
+          }
           result = modeIncludesJozi(serviceMode)
             ? resolveJoziSupport({
                 safety_context: args.safety_context || inferJoziSafetyContext(args),
@@ -2827,7 +2841,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
         properties: {
           needs: {
             type: 'array',
-            description: 'All needs the caller has stated, translated into these categories. Keep distinct needs distinct: safe tonight plus food must include shelter_navigation or safe_space_navigation AND food; coughing or needing a clinic is healthcare; a public place to sit during the day is daytime_community_space.',
+            description: 'All needs the caller has stated, translated into these categories. Keep distinct needs distinct: safe tonight plus food must include shelter_navigation or safe_space_navigation AND food; coughing or needing a clinic is healthcare; a public place to sit during the day is daytime_community_space. Do not pass a raw safe site or safe place phrase: if its meaning is not clear, ask once whether the caller means tonight, a daytime public place, or danger now, then use the matching canonical category and retain their earlier location.',
             items: { type: 'string', enum: JOZI_SUPPORT_CATEGORIES }
           },
           service_type: { type: 'string', enum: JOZI_SUPPORT_CATEGORIES },
@@ -2841,6 +2855,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
             enum: ['none', 'medical_emergency', 'self_harm_imminent', 'suicide_imminent', 'overdose', 'violence_now', 'gbv_immediate', 'fire_emergency', 'immediate_danger']
           },
           timing: { type: 'string', enum: ['now', 'today', 'tonight', 'routine'], description: 'When the caller needs the service. Preserve tonight across follow-up turns. Symptom timing does not mean the caller requested a doctor connection.' },
+          safe_site_type: { type: 'string', enum: ['tonight', 'daytime', 'danger_now'], description: 'Use only after an unqualified safe-site clarification: tonight for overnight or shelter help, daytime for a public daytime community place, and danger_now for urgent danger. Retain the caller\'s earlier location and do not ask the same clarification again.' },
           coordination_preference: { type: 'string', enum: ['appointment_request', 'clinician_handoff', 'none'], description: 'For healthcare demos, reflect the action the caller actually requested or accepted. Default to none; do not infer clinician_handoff merely because symptoms are happening now.' },
           detail_requested: { type: 'string', enum: ['recommendation', 'phone', 'hours', 'address', 'directions'], description: 'Use the caller\'s current request so the verified response can give an exact phone number, hours, address, or directions without relying on model memory.' },
           safe_to_speak: { type: 'string', enum: ['yes', 'no', 'unknown'] },

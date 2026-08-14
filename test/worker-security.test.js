@@ -67,6 +67,8 @@ test('Jozi action instructions enforce short progressive spoken turns', () => {
   assert.match(instructions, /second route.*left for later/);
   assert.match(instructions, /warm, unhurried, and conversational/);
   assert.match(instructions, /Do not preface the action with a limitation/);
+  assert.match(instructions, /ask its one question once and wait for a new caller turn/i);
+  assert.match(instructions, /Do not call find_support_services again until the caller provides new information/i);
 });
 
 test('Jozi lookup lets the voice model carry natural context without inventing placeholders', () => {
@@ -75,6 +77,8 @@ test('Jozi lookup lets the voice model carry natural context without inventing p
   const lookupTool = workerSource.slice(start, end);
   assert.match(lookupTool, /intelligently interpreted the caller\\'s natural words and remembered context/);
   assert.match(lookupTool, /safe tonight plus food/);
+  assert.match(lookupTool, /raw safe site or safe place phrase/);
+  assert.match(lookupTool, /safe_site_type/);
   assert.match(lookupTool, /coughing or needing a clinic is healthcare/);
   assert.match(lookupTool, /mes_programme/);
   assert.match(lookupTool, /Omit this field if none was stated/);
@@ -83,6 +87,21 @@ test('Jozi lookup lets the voice model carry natural context without inventing p
   assert.match(lookupTool, /required: \['needs', 'safety_context'\]/);
   assert.doesNotMatch(lookupTool, /required: \[[^\]]*'location'/);
   assert.doesNotMatch(lookupTool, /required: \[[^\]]*'audience'/);
+});
+
+test('Jozi clarification context is retained only for the pending lookup and emergencies clear stale consent', () => {
+  const lookupStart = workerSource.indexOf("case 'find_support_services':");
+  const lookupEnd = workerSource.indexOf("case 'coordinate_support_demo':", lookupStart);
+  const lookupCase = workerSource.slice(lookupStart, lookupEnd);
+  assert.match(lookupCase, /jozi_pending_lookup_context/);
+  assert.match(lookupCase, /mergeJoziSupportContext/);
+  assert.match(lookupCase, /buildJoziPendingLookupContext/);
+
+  const emergencyStart = workerSource.indexOf("case 'handle_emergency':");
+  const emergencyEnd = workerSource.indexOf('default:', emergencyStart);
+  const emergencyCase = workerSource.slice(emergencyStart, emergencyEnd);
+  assert.match(emergencyCase, /setMeta\('jozi_demo_consent_offer', '\{\}'\)/);
+  assert.match(emergencyCase, /setMeta\('jozi_pending_lookup_context', '\{\}'\)/);
 });
 
 test('emergency routing can be called for fire or violence without inventing symptoms', () => {
