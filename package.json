@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/cloudflare-worker.js",
   "scripts": {
+    "test": "node --test --test-concurrency=1",
     "start": "wrangler dev",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

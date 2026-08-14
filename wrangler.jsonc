@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "voice-selfcare",
+  "account_id": "b048ea3aa3d97e55d690771cff6e423c",
   "main": "src/cloudflare-worker.js",
   "compatibility_date": "2026-05-14",
   "durable_objects": {
@@ -49,6 +50,10 @@
     "VAD_SILENCE_MS": "1200",
     "FINALIZE_IDLE_MS": "120000",
     "PROVIDER_LOOKUP_TIMEOUT_MS": "2500",
-    "CALLER_MEMORY_ENABLED": "true"
+    "SERVICE_MODE": "combined",
+    "JOZI_DEMO_MODE": "true",
+    "AUTOMATIC_FOLLOWUP_ENABLED": "false",
+    "CALLER_MEMORY_ENABLED": "false",
+    "JOZI_TRANSCRIPT_TTL_DAYS": "7"
   }
 }

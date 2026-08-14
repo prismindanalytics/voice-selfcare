@@ -1,4 +1,14 @@
 import { DurableObject } from 'cloudflare:workers';
+import {
+  JOZI_SUPPORT_CATEGORIES,
+  JOZI_SUPPORT_INSTRUCTIONS,
+  buildServiceGreeting,
+  coordinateJoziSupport,
+  modeIncludesJozi,
+  normalizeServiceMode,
+  resolveJoziSupport,
+  serviceModePolicy
+} from './jozi-support.js';
 
 const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2';
 const DEFAULT_SUMMARY_MODEL = 'gpt-5.5';
@@ -10,7 +20,6 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 900;
 const DEFAULT_FINALIZE_IDLE_MS = 120000;
 const DEFAULT_PROVIDER_LOOKUP_TIMEOUT_MS = 2500;
 const CALLER_MEMORY_PREFIX = 'caller_memory/';
-const INITIAL_GREETING = "Hello, thank you for calling. This is your health advisor. I'm here to help. What health concern can we talk through today?";
 
 const MEDICAL_INSTRUCTIONS = `You are an experienced medical professional providing telephone consultations for patients in Low and Middle Income Countries (LMICs). Conduct systematic assessments like a doctor would, while being warm and empathetic. Be proactive — do not wait for the patient to ask questions.
 
@@ -97,6 +106,27 @@ const ACTION_RESPONSE_INSTRUCTIONS = [
   'Do not add a long recap.'
 ].join(' ');
 
+const JOZI_ACTION_RESPONSE_INSTRUCTIONS = [
+  'Read the complete tool output voiceResponse aloud, or faithfully translate it, in a calm, respectful tone. If it contains more than one route, speak every route in order.',
+  'Use voiceResponse as the complete factual basis without adding any provider name, telephone number, address, hours, availability, or capability.',
+  'Say call before travelling whenever the result says call_before_visit, and never claim a bed, meal, appointment, clinician, transfer, or service is live unless the result explicitly says confirmed true.',
+  'For a demo coordination result, state the simulated outcome, then immediately say that nothing was sent, booked, checked, or transferred live.',
+  'For urgent_escalation, give the first emergency number immediately, ask for the nearest landmark, and do not continue ordinary directory search.',
+  'Do not add a long recap.'
+].join(' ');
+
+const JOZI_COMBINED_HEALTH_INSTRUCTIONS = `
+## HEALTH SUPPORT IN COMBINED MODE
+- Assess health concerns with the same calm, clinically careful style as a telephone health adviser, without claiming to diagnose or replace a clinician.
+- Ask one question at a time. Gather onset, severity, location, relevant associated symptoms, medicines, pregnancy or age context when relevant, and screen for red flags.
+- Red flags include chest pain, severe breathing difficulty, severe bleeding, stroke signs, seizure, severe allergic reaction, overdose, imminent self-harm, severe child dehydration, and pregnancy emergencies.
+- For a non-emergency, give concise, evidence-based self-care and use health_assessment when you have enough information to state the safest next step.
+- For any emergency, call handle_emergency immediately.
+- For a Johannesburg clinic, hospital, mental-health service, medicine route, test route, or other destination, call find_support_services. Never name a destination from memory.
+- The old unverified provider, booking, referral, refill, commodity, and testing tools are not available in this mode. Do not ask to call them.
+- A presentation-only clinic request or doctor-handoff screen can be shown only through coordinate_support_demo after the caller selects a resource returned in this call. It is never submitted or live.
+`.trim();
+
 export class CallerRegistry extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -156,6 +186,11 @@ export class CallerRegistry extends DurableObject {
     if (Date.now() - Number(row.updated_at) > maxAgeMs) return null;
     return row.openai_call_id;
   }
+
+  deleteCallMapping(providerCallId) {
+    if (!providerCallId) return;
+    this.ctx.storage.sql.exec('DELETE FROM call_map WHERE provider_call_id = ?', String(providerCallId));
+  }
 }
 
 export class CallSession extends DurableObject {
@@ -193,13 +228,18 @@ export class CallSession extends DurableObject {
     const callId = getCallId(event);
     if (!callId) return;
 
+    const serviceMode = configuredServiceMode(this.env);
+
     const phoneFromSip = extractPhoneFromSipHeaders(event?.data?.sip_headers);
     const providerCallId = extractSipHeaderValue(event?.data?.sip_headers, 'x-twilio-parentcallsid') ||
       extractSipHeaderValue(event?.data?.sip_headers, 'x-twilio-callsid') ||
       extractSipHeaderValue(event?.data?.sip_headers, 'callid');
-    const safePhone = normalizePatientPhone(phoneFromSip || initialPhone, callId);
+    const safePhone = modeIncludesJozi(serviceMode)
+      ? normalizePatientPhone(null, callId)
+      : normalizePatientPhone(phoneFromSip || initialPhone, callId);
     this.setMeta('call_id', callId);
     this.setMeta('patient_phone', safePhone);
+    this.setMeta('service_mode', serviceMode);
     const callerMemory = await this.loadCallerMemory(safePhone);
     if (callerMemory) {
       this.setMeta('caller_memory_context', JSON.stringify(callerMemory));
@@ -223,14 +263,12 @@ export class CallSession extends DurableObject {
   }
 
   async alarm() {
-    if (this.getMeta('completed_at')) return;
-    this.setMeta('finalize_reason', 'idle_alarm');
+    if (!this.getMeta('completed_at')) this.setMeta('finalize_reason', 'idle_alarm');
     await this.finalizeCall();
   }
 
   async forceFinalize(reason = 'external_callback') {
-    if (this.getMeta('completed_at')) return;
-    this.setMeta('finalize_reason', reason);
+    if (!this.getMeta('completed_at')) this.setMeta('finalize_reason', reason);
     await this.finalizeCall();
   }
 
@@ -250,6 +288,7 @@ export class CallSession extends DurableObject {
       languageUsed: this.getMeta('language_used'),
       providerFollowupNeeded: this.getMeta('provider_followup_needed') === 'true',
       providerFollowupReason: this.getMeta('provider_followup_reason'),
+      serviceMode: this.getMeta('service_mode') || configuredServiceMode(this.env),
       callerMemoryContext: this.getMetaJson('caller_memory_context'),
       references: this.getMetaJson('references') || [],
       messages
@@ -257,14 +296,14 @@ export class CallSession extends DurableObject {
   }
 
   async loadCallerMemory(phone) {
-    if (!callerMemoryEnabled(this.env) || !isUsablePatientPhone(phone) || !this.env.TRANSCRIPTS) return null;
+    if (!callerMemoryAllowed(this.env) || !isUsablePatientPhone(phone) || !this.env.TRANSCRIPTS) return null;
     const memory = await readCallerMemory(this.env, phone);
     return buildVoiceSafeMemoryContext(memory);
   }
 
   async updateCallerMemory(summaries, messages, artifacts) {
     const phone = this.getMeta('patient_phone') || '';
-    if (!callerMemoryEnabled(this.env) || !isUsablePatientPhone(phone) || !this.env.TRANSCRIPTS) return null;
+    if (!callerMemoryAllowed(this.env) || !isUsablePatientPhone(phone) || !this.env.TRANSCRIPTS) return null;
 
     const existing = await readCallerMemory(this.env, phone);
     const memory = await generateCallerMemoryRecord(this.env, {
@@ -289,6 +328,8 @@ export class CallSession extends DurableObject {
     const simpleInstructions = options.minimal ||
       String(this.env.OPENAI_ACCEPT_SIMPLE || 'false').toLowerCase() === 'true';
     const memoryContext = this.getMetaJson('caller_memory_context');
+    const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
+    const demoEnabled = joziDemoEnabled(this.env);
 
     const payload = {
       type: 'realtime',
@@ -297,8 +338,8 @@ export class CallSession extends DurableObject {
         input: realtimeInputAudioConfig(this.env),
         output: { voice: this.env.OPENAI_REALTIME_VOICE || DEFAULT_VOICE }
       },
-      instructions: simpleInstructions ? 'You are a health support agent.' : buildMedicalInstructions(memoryContext),
-      tools: useTools ? realtimeTools() : undefined
+      instructions: simpleInstructions ? buildMinimalInstructions(serviceMode) : buildServiceInstructions(serviceMode, memoryContext),
+      tools: useTools ? realtimeTools(serviceMode, demoEnabled) : undefined
     };
 
     this.setMeta('last_stage', 'accepting_call');
@@ -375,6 +416,7 @@ export class CallSession extends DurableObject {
   }
 
   async handleRealtimeMessage(raw) {
+    if (this.getMeta('completed_at')) return;
     let message;
     try {
       message = JSON.parse(raw);
@@ -490,6 +532,7 @@ export class CallSession extends DurableObject {
 
   async handleToolCall(toolName, args, toolCallId) {
     const phone = this.getMeta('patient_phone') || 'anonymous';
+    const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
     let result;
     this.setMeta('last_tool_started', JSON.stringify({
       toolName,
@@ -497,23 +540,50 @@ export class CallSession extends DurableObject {
     }));
 
     try {
+      if (!toolAllowedForMode(serviceMode, toolName, joziDemoEnabled(this.env))) {
+        throw new Error(`Tool ${toolName} is not available in ${serviceMode} mode.`);
+      }
       switch (toolName) {
         case 'health_assessment':
-          result = {
-            success: true,
-            assessmentId: generateId('ASSESS'),
-            symptoms: args.symptoms || [],
-            severity: args.severity || 'informational',
-            voiceResponse: 'Assessment recorded.'
-          };
-          this.addMessage('system', `Health assessment: ${JSON.stringify(args)}`);
-          break;
+          {
+            const medicalContent = String(args.medical_content || '').trim();
+            const nextStep = String(args.next_step || '').trim();
+            const spokenAssessment = [medicalContent, nextStep].filter(Boolean).join(' ');
+            result = {
+              success: true,
+              assessmentId: generateId('ASSESS'),
+              symptoms: args.symptoms || [],
+              severity: args.severity || 'informational',
+              voiceResponse: modeIncludesJozi(serviceMode)
+                ? `${spokenAssessment || 'I have enough information to explain the safest next step.'} This app will not keep the call details after the call ends.`
+                : 'Assessment recorded.'
+            };
+            this.addMessage('system', `Health assessment: ${JSON.stringify(args)}`);
+            break;
+          }
 
         case 'find_clinic':
         case 'find_clinics':
         case 'resolve_providers':
           result = await resolveProviderOptions(this.env, args);
           this.addMessage('system', `Provider options resolved: ${JSON.stringify(result)}`);
+          break;
+
+        case 'find_support_services':
+          result = resolveJoziSupport(args);
+          this.setMeta('jozi_offered_resource_ids', JSON.stringify((result.options || []).map((option) => option.id).filter(Boolean)));
+          this.addMessage('system', `Jozi support options resolved: ${JSON.stringify(result)}`);
+          break;
+
+        case 'coordinate_support_demo':
+          result = coordinateJoziSupport({
+            ...args,
+            demo_enabled: joziDemoEnabled(this.env),
+            require_offered_resource: true,
+            offered_resource_ids: this.getMetaJson('jozi_offered_resource_ids') || [],
+            reference_id: generateId('JZDEMO')
+          });
+          this.addMessage('system', `Jozi demo coordination: ${JSON.stringify(result)}`);
           break;
 
         case 'book_slot':
@@ -574,13 +644,22 @@ export class CallSession extends DurableObject {
           break;
 
         case 'handle_emergency':
-          result = {
-            success: true,
-            emergency: true,
-            voiceResponse: 'This sounds serious and needs urgent medical attention. Please call emergency services or go to the nearest emergency facility now.'
-          };
+          result = modeIncludesJozi(serviceMode)
+            ? resolveJoziSupport({
+                safety_context: args.safety_context || inferJoziSafetyContext(args),
+                location: args.location || args.landmark || '',
+                audience: args.audience || 'unknown',
+                phone_type: args.phone_type || 'unknown'
+              })
+            : {
+                success: true,
+                emergency: true,
+                voiceResponse: 'This sounds serious and needs urgent medical attention. Please call emergency services or go to the nearest emergency facility now.'
+              };
           this.addMessage('system', `Emergency protocol: ${JSON.stringify(args)}`);
-          await this.sendPreferredFollowup(phone, `Emergency guidance: seek urgent care now. Symptoms: ${(args.symptoms || []).join(', ')}`);
+          if (!modeIncludesJozi(serviceMode)) {
+            await this.sendPreferredFollowup(phone, `Emergency guidance: seek urgent care now. Symptoms: ${(args.symptoms || []).join(', ')}`);
+          }
           break;
 
         default:
@@ -612,47 +691,124 @@ export class CallSession extends DurableObject {
       response: {
         output_modalities: ['audio'],
         max_output_tokens: numericEnv(this.env.OPENAI_MAX_OUTPUT_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS),
-        instructions: ACTION_RESPONSE_INSTRUCTIONS
+        instructions: modeIncludesJozi(serviceMode) ? JOZI_ACTION_RESPONSE_INSTRUCTIONS : ACTION_RESPONSE_INSTRUCTIONS
       }
     });
   }
 
   async finalizeCall() {
-    if (this.getMeta('completed_at')) return;
-    this.flushPendingInputTranscripts();
+    const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
+    const joziPrivacyMode = !serviceModePolicy(serviceMode).persistRawTranscript;
+    if (this.getMeta('completed_at')) {
+      const pendingMapping = this.getMeta('mapping_cleanup_pending');
+      if (joziPrivacyMode && (this.getMeta('privacy_purged') !== 'true' || pendingMapping)) {
+        try {
+          await this.cleanupJoziSession(serviceMode, pendingMapping || this.getMeta('provider_call_id'));
+          await this.ctx.storage.deleteAlarm();
+        } catch (error) {
+          await this.scheduleJoziCleanupRetry(error);
+          throw error;
+        }
+      }
+      return;
+    }
 
-    const messages = this.ctx.storage.sql
-      .exec('SELECT role, text, created_at FROM messages ORDER BY id ASC')
-      .toArray();
-    const transcriptMessages = messages.length
-      ? messages
-      : [{
-          role: 'system',
-          text: 'No transcript text was captured for this completed call.',
-          created_at: new Date().toISOString()
-        }];
+    const providerCallId = this.getMeta('provider_call_id');
+    try {
+      this.flushPendingInputTranscripts();
 
-    const artifacts = buildCallArtifacts(transcriptMessages);
-    const summaries = await this.generateCallSummaries(transcriptMessages, artifacts);
-    ensureGeneratedReferences(summaries, artifacts);
-    this.setMeta('summary', summaries.patientSummary);
-    this.setMeta('patient_summary', summaries.patientSummary);
-    this.setMeta('provider_summary', summaries.providerSummary || '');
-    this.setMeta('case_type', summaries.caseType);
-    this.setMeta('language_used', summaries.languageUsed || '');
-    this.setMeta('provider_followup_needed', String(summaries.providerFollowupNeeded));
-    this.setMeta('provider_followup_reason', summaries.providerFollowupReason || '');
-    this.setMeta('references', JSON.stringify(buildReferences(artifacts)));
-    this.setMeta('completed_at', new Date().toISOString());
-    await this.persistTranscript(summaries, transcriptMessages, artifacts);
-    await this.updateCallerMemory(summaries, transcriptMessages, artifacts).catch((error) => {
-      this.setMeta('caller_memory_error', error.message);
-      console.error('[Memory] update failed', error);
-    });
+      const messages = this.ctx.storage.sql
+        .exec('SELECT role, text, created_at FROM messages ORDER BY id ASC')
+        .toArray();
+      const transcriptMessages = messages.length
+        ? messages
+        : [{
+            role: 'system',
+            text: 'No transcript text was captured for this completed call.',
+            created_at: new Date().toISOString()
+          }];
 
-    const phone = this.getMeta('patient_phone') || '';
-    await this.sendPreferredFollowup(phone, buildPatientFollowupMessage(summaries, artifacts));
-    await this.ctx.storage.deleteAlarm();
+      const artifacts = buildCallArtifacts(transcriptMessages);
+      const summaries = await this.generateCallSummaries(transcriptMessages, artifacts);
+      ensureGeneratedReferences(summaries, artifacts);
+      this.setMeta('summary', summaries.patientSummary);
+      this.setMeta('patient_summary', summaries.patientSummary);
+      this.setMeta('provider_summary', summaries.providerSummary || '');
+      this.setMeta('case_type', summaries.caseType);
+      this.setMeta('language_used', summaries.languageUsed || '');
+      this.setMeta('provider_followup_needed', String(summaries.providerFollowupNeeded));
+      this.setMeta('provider_followup_reason', summaries.providerFollowupReason || '');
+      this.setMeta('references', joziPrivacyMode ? '[]' : JSON.stringify(buildReferences(artifacts)));
+      this.setMeta('completed_at', new Date().toISOString());
+      await this.persistTranscript(summaries, transcriptMessages, artifacts);
+      await this.updateCallerMemory(summaries, transcriptMessages, artifacts).catch((error) => {
+        this.setMeta('caller_memory_error', error.message);
+        console.error('[Memory] update failed', error);
+      });
+
+      const phone = this.getMeta('patient_phone') || '';
+      await this.sendPreferredFollowup(phone, buildPatientFollowupMessage(summaries, artifacts));
+      if (!joziPrivacyMode) await this.ctx.storage.deleteAlarm();
+    } finally {
+      if (joziPrivacyMode) {
+        try {
+          await this.cleanupJoziSession(serviceMode, providerCallId);
+          await this.ctx.storage.deleteAlarm();
+        } catch (error) {
+          await this.scheduleJoziCleanupRetry(error);
+          throw error;
+        }
+      }
+    }
+  }
+
+  async cleanupJoziSession(serviceMode, providerCallId) {
+    let firstError = null;
+    let mappingError = null;
+
+    if (providerCallId) {
+      try {
+        await callerRegistry(this.env).deleteCallMapping(providerCallId);
+      } catch (error) {
+        mappingError = error;
+        firstError = error;
+        console.error('[Privacy] Could not remove external call mapping', error);
+      }
+    }
+
+    try {
+      this.purgeJoziSessionState(serviceMode);
+    } catch (error) {
+      firstError ||= error;
+      console.error('[Privacy] Could not purge Jozi session state', error);
+    }
+
+    // If local purge succeeded but the separate registry failed, retain only
+    // the opaque mapping id so an alarm can retry without retaining call text.
+    if (mappingError) this.setMeta('mapping_cleanup_pending', providerCallId);
+    if (!mappingError && this.getMeta('mapping_cleanup_pending')) {
+      this.ctx.storage.sql.exec("DELETE FROM metadata WHERE key = 'mapping_cleanup_pending'");
+    }
+    if (firstError) throw firstError;
+  }
+
+  async scheduleJoziCleanupRetry(error) {
+    console.error('[Privacy] Jozi session cleanup failed; scheduling retry', error);
+    try {
+      await this.ctx.storage.setAlarm(Date.now() + 60_000);
+    } catch (alarmError) {
+      console.error('[Privacy] Could not schedule Jozi cleanup retry', alarmError);
+    }
+  }
+
+  purgeJoziSessionState(serviceMode) {
+    const completedAt = this.getMeta('completed_at') || new Date().toISOString();
+    this.ctx.storage.sql.exec('DELETE FROM messages');
+    this.ctx.storage.sql.exec('DELETE FROM input_transcript_deltas');
+    this.ctx.storage.sql.exec('DELETE FROM metadata');
+    this.setMeta('service_mode', normalizeServiceMode(serviceMode));
+    this.setMeta('completed_at', completedAt);
+    this.setMeta('privacy_purged', 'true');
   }
 
   async scheduleFinalizeAlarm(reason = 'activity') {
@@ -668,34 +824,50 @@ export class CallSession extends DurableObject {
     if (!callId) return;
 
     const completedAt = this.getMeta('completed_at') || new Date().toISOString();
-    const key = `transcripts/${callId}.json`;
+    const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
+    const policy = serviceModePolicy(serviceMode);
+    const references = buildReferences(artifacts);
+    const recordId = policy.persistRawTranscript ? callId : await sha256Hex(callId);
+    const key = `transcripts/${recordId}.json`;
+    const safeActivity = joziSafeActivity(artifacts);
     const payload = {
-      callId,
-      patientPhone: this.getMeta('patient_phone'),
+      callId: policy.persistRawTranscript ? callId : null,
+      recordId: policy.persistRawTranscript ? null : recordId,
+      serviceMode,
+      patientPhone: policy.persistRawTranscript ? this.getMeta('patient_phone') : null,
       acceptedAt: this.getMeta('accepted_at'),
       completedAt,
-      summary: summaries.patientSummary,
-      patientSummary: summaries.patientSummary,
-      providerSummary: summaries.providerSummary,
-      caseType: summaries.caseType,
-      languageUsed: summaries.languageUsed || '',
-      providerFollowupNeeded: summaries.providerFollowupNeeded,
-      providerFollowupReason: summaries.providerFollowupReason,
-      references: buildReferences(artifacts),
-      artifacts,
-      messages
+      summary: policy.persistRawTranscript ? summaries.patientSummary : 'Jozi support call completed. Raw caller details were not retained.',
+      patientSummary: policy.persistRawTranscript ? summaries.patientSummary : 'Jozi support call completed. Raw caller details were not retained.',
+      providerSummary: policy.persistRawTranscript ? summaries.providerSummary : null,
+      caseType: policy.persistRawTranscript ? summaries.caseType : 'community_support',
+      languageUsed: policy.persistRawTranscript ? (summaries.languageUsed || '') : 'unknown',
+      providerFollowupNeeded: policy.persistRawTranscript ? summaries.providerFollowupNeeded : false,
+      providerFollowupReason: policy.persistRawTranscript ? summaries.providerFollowupReason : 'none',
+      references: policy.persistRawTranscript ? references : [],
+      artifacts: policy.persistRawTranscript ? artifacts : safeActivity,
+      messages: policy.persistRawTranscript ? messages : [],
+      rawTranscriptRetained: policy.persistRawTranscript
     };
 
-    await this.env.TRANSCRIPTS.put(key, JSON.stringify(payload, null, 2), {
+    const putOptions = {
       metadata: {
-        callId,
-        completedAt
+        recordId,
+        completedAt,
+        serviceMode
       }
-    });
+    };
+    if (!policy.persistRawTranscript) {
+      putOptions.expirationTtl = Math.max(60, Math.round(numericEnv(this.env.JOZI_TRANSCRIPT_TTL_DAYS, 7) * 24 * 60 * 60));
+    }
+    await this.env.TRANSCRIPTS.put(key, JSON.stringify(payload, null, 2), putOptions);
     this.setMeta('transcript_kv_key', key);
   }
 
   async generateCallSummaries(messages, artifacts) {
+    if (modeIncludesJozi(this.getMeta('service_mode') || configuredServiceMode(this.env))) {
+      return joziFallbackSummaries(artifacts);
+    }
     const apiKey = this.env.OPENAI_API_KEY;
     if (!apiKey) return fallbackSummaries(messages, artifacts);
 
@@ -746,6 +918,9 @@ export class CallSession extends DurableObject {
   }
 
   async sendPreferredFollowup(phone, message) {
+    const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
+    if (!serviceModePolicy(serviceMode).automaticFollowup) return false;
+    if (String(this.env.AUTOMATIC_FOLLOWUP_ENABLED || 'true').toLowerCase() === 'false') return false;
     if (!phone || phone.startsWith('anonymous_')) return false;
 
     if (this.env.TWILIO_ACCOUNT_SID && this.env.TWILIO_AUTH_TOKEN) {
@@ -842,11 +1017,15 @@ export class CallSession extends DurableObject {
 
   sendInitialResponse() {
     if (this.initialResponseSent) return;
+    const greeting = buildServiceGreeting(
+      this.getMeta('service_mode') || configuredServiceMode(this.env),
+      joziDemoEnabled(this.env)
+    );
     const sent = this.sendRealtime({
       type: 'response.create',
       response: {
         output_modalities: ['audio'],
-        instructions: `Say exactly: "${INITIAL_GREETING}"`
+        instructions: `Say exactly: "${greeting}"`
       }
     });
     if (sent) {
@@ -902,6 +1081,8 @@ async function routeRequest(request, env, ctx) {
     return Response.json({
       status: 'healthy',
       runtime: 'cloudflare-worker',
+      serviceMode: configuredServiceMode(env),
+      joziDemoMode: joziDemoEnabled(env),
       timestamp: new Date().toISOString()
     });
   }
@@ -931,7 +1112,7 @@ async function routeRequest(request, env, ctx) {
 
   if (request.method === 'POST' && path === '/signalwire/status') {
     const form = await readForm(request);
-    if (form.From) await callerRegistry(env).setLastCaller(form.From);
+    if (!modeIncludesJozi(configuredServiceMode(env)) && form.From) await callerRegistry(env).setLastCaller(form.From);
     return textResponse('OK');
   }
 
@@ -980,6 +1161,9 @@ async function routeRequest(request, env, ctx) {
 }
 
 async function handleOpenAIWebhook(request, env, ctx, minimal) {
+  if (modeIncludesJozi(configuredServiceMode(env)) && !env.OPENAI_WEBHOOK_SECRET) {
+    return textResponse('Webhook verification is required for Jozi support mode.', 503);
+  }
   const rawBody = await request.text();
   if (env.OPENAI_WEBHOOK_SECRET) {
     const verified = await verifyStandardWebhook(request.headers, rawBody, env.OPENAI_WEBHOOK_SECRET);
@@ -995,30 +1179,28 @@ async function handleOpenAIWebhook(request, env, ctx, minimal) {
 
   const callId = getCallId(event);
   if (callId) {
-    const phone = extractPhoneFromSipHeaders(event?.data?.sip_headers) ||
-      await callerRegistry(env).getLastCaller(5 * 60 * 1000);
+    const phoneFromSip = extractPhoneFromSipHeaders(event?.data?.sip_headers);
+    const phone = phoneFromSip || (modeIncludesJozi(configuredServiceMode(env))
+      ? null
+      : await callerRegistry(env).getLastCaller(5 * 60 * 1000));
     ctx.waitUntil(callSession(env, callId).acceptAndMonitor(event, phone, { minimal }));
   }
 
-  return new Response('OK', {
-    status: 200,
-    headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY || ''}`
-    }
-  });
+  return textResponse('OK');
 }
 
 async function handleSignalWireVoice(request, env) {
   const form = await readForm(request);
-  if (form.From) await callerRegistry(env).setLastCaller(form.From);
+  if (!modeIncludesJozi(configuredServiceMode(env)) && form.From) await callerRegistry(env).setLastCaller(form.From);
 
   const projectId = requireEnv(env, 'OPENAI_PROJECT_ID');
   const sipUri = `sip:${projectId}@sip.api.openai.com;transport=tls`;
   const codec = env.SIP_CODECS || mapG711ToSip(env.TELEPHONY_CODEC);
   const codecsAttr = codec ? ` codecs="${escapeXml(codec)}"` : '';
+  const lineLabel = modeIncludesJozi(configuredServiceMode(env)) ? 'Jozi health and support line' : 'healthcare assistant';
 
   return xmlResponse(`<Response>
-  <Say>Connecting to your healthcare assistant, please wait.</Say>
+  <Say>Connecting to the ${escapeXml(lineLabel)}, please wait.</Say>
   <Dial>
     <Sip${codecsAttr}>${escapeXml(sipUri)}</Sip>
   </Dial>
@@ -1027,7 +1209,7 @@ async function handleSignalWireVoice(request, env) {
 
 async function handleTwilioVoice(request, env, forcedCodec = '') {
   const form = await readForm(request);
-  if (form.From) await callerRegistry(env).setLastCaller(form.From);
+  if (!modeIncludesJozi(configuredServiceMode(env)) && form.From) await callerRegistry(env).setLastCaller(form.From);
 
   const projectId = requireEnv(env, 'OPENAI_PROJECT_ID');
   const origin = new URL(request.url).origin;
@@ -1037,9 +1219,10 @@ async function handleTwilioVoice(request, env, forcedCodec = '') {
   const codecsAttr = codec ? ` codecs="${escapeXml(codec)}"` : '';
   const statusUrl = `${origin}/twilio/status`;
   const dialStatusUrl = `${origin}/twilio/dial-status`;
+  const lineLabel = modeIncludesJozi(configuredServiceMode(env)) ? 'Jozi health and support line' : 'healthcare assistant';
 
   return xmlResponse(`<Response>
-  <Say>Connecting to your healthcare assistant, please wait.</Say>
+  <Say>Connecting to the ${escapeXml(lineLabel)}, please wait.</Say>
   <Dial action="${escapeXml(dialStatusUrl)}" method="POST">
     <Sip${codecsAttr} statusCallback="${escapeXml(statusUrl)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed">${escapeXml(sipUri)}</Sip>
   </Dial>
@@ -1056,7 +1239,7 @@ async function handleTwilioDialStatus(request, env, ctx) {
 
 async function handleTwilioCompletionCallback(request, env, ctx, returnTwiml) {
   const form = await readForm(request);
-  if (form.From) await callerRegistry(env).setLastCaller(form.From);
+  if (!modeIncludesJozi(configuredServiceMode(env)) && form.From) await callerRegistry(env).setLastCaller(form.From);
 
   const terminalStatuses = new Set(['completed', 'busy', 'failed', 'no-answer', 'canceled']);
   const statusCandidates = uniqueStrings([
@@ -2243,6 +2426,22 @@ function buildMedicalInstructions(memoryContext) {
   return memoryInstructions ? `${MEDICAL_INSTRUCTIONS}\n\n${memoryInstructions}` : MEDICAL_INSTRUCTIONS;
 }
 
+function buildServiceInstructions(mode, memoryContext) {
+  const normalized = normalizeServiceMode(mode);
+  if (normalized === 'health') return buildMedicalInstructions(memoryContext);
+  if (normalized === 'jozi') return JOZI_SUPPORT_INSTRUCTIONS;
+  return [
+    JOZI_SUPPORT_INSTRUCTIONS,
+    JOZI_COMBINED_HEALTH_INSTRUCTIONS
+  ].join('\n\n');
+}
+
+function buildMinimalInstructions(mode) {
+  return modeIncludesJozi(mode)
+    ? 'You are the Jozi support line. Ask one short question at a time, use only curated support tools for destinations, and escalate immediate danger first.'
+    : 'You are a health support agent.';
+}
+
 function buildMemoryInstructions(memoryContext) {
   const contextText = buildMemoryContextText(memoryContext);
   if (!contextText) return '';
@@ -2301,8 +2500,8 @@ function getCallId(event) {
   return event?.call_id || event?.data?.call_id || event?.call?.id || event?.id || null;
 }
 
-function realtimeTools() {
-  return [
+function realtimeTools(mode = 'health', demoEnabled = false) {
+  const healthTools = [
     {
       type: 'function',
       name: 'health_assessment',
@@ -2443,17 +2642,76 @@ function realtimeTools() {
     {
       type: 'function',
       name: 'handle_emergency',
-      description: 'Activate emergency guidance for urgent symptoms.',
+      description: 'Activate deterministic emergency guidance immediately for urgent medical symptoms, imminent self-harm, overdose, active violence, fire, or other immediate danger.',
       parameters: {
         type: 'object',
         properties: {
           symptoms: { type: 'array', items: { type: 'string' } },
-          severity: { type: 'string' }
-        },
-        required: ['symptoms']
+          severity: { type: 'string' },
+          safety_context: {
+            type: 'string',
+            enum: ['medical_emergency', 'self_harm_imminent', 'suicide_imminent', 'overdose', 'violence_now', 'gbv_immediate', 'fire_emergency', 'immediate_danger']
+          },
+          location: { type: 'string' },
+          landmark: { type: 'string' },
+          audience: { type: 'string', enum: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'] },
+          phone_type: { type: 'string', enum: ['mobile', 'landline', 'unknown'] }
+        }
       }
     }
   ];
+
+  const supportTools = [
+    {
+      type: 'function',
+      name: 'find_support_services',
+      description: 'Find deterministic Johannesburg or Soweto support options only from the curated, public-source directory. Use for mental health, social support, shelter or safe-space navigation, women-and-children shelter, food or hygiene navigation, daytime community space, clinics, substance-use support, GBV, children and families, grants, documents, jobs, legal help, or crisis routing. Never invent a destination.',
+      parameters: {
+        type: 'object',
+        properties: {
+          needs: { type: 'array', items: { type: 'string', enum: JOZI_SUPPORT_CATEGORIES } },
+          service_type: { type: 'string', enum: JOZI_SUPPORT_CATEGORIES },
+          location: { type: 'string' },
+          landmark: { type: 'string' },
+          audience: { type: 'string', enum: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'] },
+          contact_mode: { type: 'string', enum: ['phone', 'in_person', 'either'] },
+          safety_context: {
+            type: 'string',
+            enum: ['none', 'medical_emergency', 'self_harm_imminent', 'suicide_imminent', 'overdose', 'violence_now', 'gbv_immediate', 'fire_emergency', 'immediate_danger']
+          },
+          timing: { type: 'string', enum: ['now', 'today', 'tonight', 'routine'] },
+          phone_type: { type: 'string', enum: ['mobile', 'landline', 'unknown'] },
+          max_options: { type: 'integer', minimum: 1, maximum: 2 }
+        },
+        required: ['needs', 'location', 'audience', 'safety_context']
+      }
+    },
+    ...(demoEnabled ? [{
+      type: 'function',
+      name: 'coordinate_support_demo',
+      description: 'Create a presentation-only simulated appointment, clinician handoff, availability check, intake request, assessment request, or navigator handoff after the caller selects a resource returned by find_support_services. Nothing is sent to a real provider and nothing is live-confirmed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          resource_id: { type: 'string' },
+          action: {
+            type: 'string',
+            enum: ['appointment_request', 'clinician_handoff', 'availability_check', 'intake_request', 'navigator_handoff', 'warm_handoff', 'assessment_request']
+          },
+          requested_time: { type: 'string' },
+          reason: { type: 'string' }
+        },
+        required: ['resource_id', 'action']
+      }
+    }] : [])
+  ];
+
+  const normalized = normalizeServiceMode(mode);
+  if (normalized === 'health') return healthTools;
+  const emergencyTool = healthTools.find((tool) => tool.name === 'handle_emergency');
+  if (normalized === 'jozi') return [emergencyTool, ...supportTools];
+  const assessmentTool = healthTools.find((tool) => tool.name === 'health_assessment');
+  return [assessmentTool, emergencyTool, ...supportTools];
 }
 
 async function resolveProviderOptions(env, args = {}) {
@@ -2799,7 +3057,9 @@ function buildCallArtifacts(messages) {
     referrals: [],
     commodityPickups: [],
     testRequests: [],
-    emergencies: []
+    emergencies: [],
+    supportLookups: [],
+    supportCoordinations: []
   };
 
   for (const message of messages) {
@@ -2814,6 +3074,8 @@ function buildCallArtifacts(messages) {
     pushParsedArtifact(artifacts.testRequests, text, 'Test request created:');
     pushParsedArtifact(artifacts.testRequests, text, 'Test request generated after call:');
     pushParsedArtifact(artifacts.emergencies, text, 'Emergency protocol:');
+    pushParsedArtifact(artifacts.supportLookups, text, 'Jozi support options resolved:');
+    pushParsedArtifact(artifacts.supportCoordinations, text, 'Jozi demo coordination:');
   }
 
   return artifacts;
@@ -2867,8 +3129,38 @@ function buildReferences(artifacts) {
         simulation: Boolean(item.simulation),
         nextAction: item.nextAction || item.instructions || ''
       }
+    })),
+    ...(artifacts.supportLookups || []).flatMap((item) => (item.options || []).map((resource) => ({
+      type: 'community_resource',
+      id: resource.id,
+      label: resource.name || 'Community support',
+      detail: {
+        resource,
+        directory: item.directory || 'jozi_curated_public_sources',
+        sourceCheckedAt: resource.source_checked_at || '',
+        availabilityConfirmed: false
+      }
+    }))),
+    ...(artifacts.supportCoordinations || []).filter((item) => item.reference_id).map((item) => ({
+      type: 'demo_support_coordination',
+      id: item.reference_id,
+      label: 'Demo support coordination',
+      detail: {
+        action: item.action || '',
+        resource: item.resource || {},
+        simulation: true,
+        submitted: false,
+        confirmed: false
+      }
     }))
   ].filter((item) => item.id);
+}
+
+function joziSafeActivity(artifacts) {
+  return {
+    directoryLookups: (artifacts.supportLookups || []).length,
+    demoActions: (artifacts.supportCoordinations || []).length
+  };
 }
 
 function ensureGeneratedReferences(summaries, artifacts) {
@@ -2958,6 +3250,30 @@ function fallbackSummaries(messages, artifacts) {
     providerFollowupReason: providerFollowupNeeded ? inferProviderReason(artifacts) : 'none',
     caseType: artifacts.emergencies.length ? 'urgent' : 'unknown',
     languageUsed: inferLanguageHintFromMessages(messages) || 'unknown',
+    commodityPickupNeeded: false,
+    commodityItems: [],
+    testNeeded: false,
+    testNames: []
+  };
+}
+
+function joziFallbackSummaries(artifacts) {
+  const references = buildReferences(artifacts);
+  const resourceNames = references
+    .filter((reference) => reference.type === 'community_resource')
+    .map((reference) => reference.label)
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .slice(0, 4);
+  const urgent = Boolean(artifacts.emergencies?.length);
+  return {
+    patientSummary: resourceNames.length
+      ? `Jozi support call completed. Public-source options discussed: ${resourceNames.join(', ')}. Availability was not confirmed.`
+      : 'Jozi support call completed. No raw caller details were retained.',
+    providerSummary: null,
+    providerFollowupNeeded: false,
+    providerFollowupReason: urgent ? 'urgent' : 'none',
+    caseType: urgent ? 'crisis_support' : 'community_support',
+    languageUsed: 'unknown',
     commodityPickupNeeded: false,
     commodityItems: [],
     testNeeded: false,
@@ -3120,6 +3436,31 @@ async function callerMemoryKey(phone) {
 
 function callerMemoryEnabled(env) {
   return String(env.CALLER_MEMORY_ENABLED || 'true').toLowerCase() !== 'false';
+}
+
+function configuredServiceMode(env) {
+  return normalizeServiceMode(env.SERVICE_MODE || 'health');
+}
+
+function joziDemoEnabled(env) {
+  return String(env.JOZI_DEMO_MODE || 'false').toLowerCase() === 'true';
+}
+
+function callerMemoryAllowed(env) {
+  return callerMemoryEnabled(env) && serviceModePolicy(configuredServiceMode(env)).callerMemory;
+}
+
+function toolAllowedForMode(mode, toolName, demoEnabled) {
+  return realtimeTools(mode, demoEnabled).some((tool) => tool.name === toolName);
+}
+
+function inferJoziSafetyContext(args = {}) {
+  const text = [...(args.symptoms || []), args.severity || ''].join(' ').toLowerCase();
+  if (/suicid|self[-\s]?harm|cannot stay safe|can'?t stay safe/.test(text)) return 'self_harm_imminent';
+  if (/overdose|unresponsive|not breathing/.test(text)) return 'overdose';
+  if (/fire|smoke|burning building/.test(text)) return 'fire_emergency';
+  if (/violence|attacking|weapon|gun|knife|threat/.test(text)) return 'violence_now';
+  return 'medical_emergency';
 }
 
 function callerMemoryPutOptions(env) {
