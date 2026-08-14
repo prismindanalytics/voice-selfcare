@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "voice-selfcare",
+  "account_id": "b048ea3aa3d97e55d690771cff6e423c",
   "main": "src/cloudflare-worker.js",
   "compatibility_date": "2026-05-14",
   "durable_objects": {
@@ -37,6 +38,7 @@
   "vars": {
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2",
     "OPENAI_REALTIME_VOICE": "marin",
+    "JOZI_REALTIME_VOICE": "marin",
     "OPENAI_SUMMARY_MODEL": "gpt-5.5",
     "OPENAI_MEMORY_MODEL": "gpt-5.5",
     "OPENAI_PROVIDER_MODEL": "gpt-5.4-mini",
@@ -49,6 +51,13 @@
     "VAD_SILENCE_MS": "1200",
     "FINALIZE_IDLE_MS": "120000",
     "PROVIDER_LOOKUP_TIMEOUT_MS": "2500",
-    "CALLER_MEMORY_ENABLED": "true"
+    "SERVICE_MODE": "health",
+    "JOZI_LINE_ENABLED": "true",
+    "HEALTH_PHONE_NUMBER": "+12063098528",
+    "JOZI_PHONE_NUMBER": "+14255173281",
+    "JOZI_DEMO_MODE": "true",
+    "AUTOMATIC_FOLLOWUP_ENABLED": "true",
+    "CALLER_MEMORY_ENABLED": "true",
+    "JOZI_TRANSCRIPT_TTL_DAYS": "7"
   }
 }
