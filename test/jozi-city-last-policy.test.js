@@ -607,6 +607,20 @@ test('demo actions retain and advance the next unresolved need instead of replay
     const replayed = mergeJoziSupportContext(pending, query);
     assert.deepEqual(replayed.needs, [entry.nextNeed], entry.label);
 
+    for (const defaults of [
+      { coordination_preference: 'none' },
+      { detail_requested: 'recommendation' }
+    ]) {
+      const replayedWithDefaults = mergeJoziSupportContext(pending, { ...query, ...defaults });
+      assert.deepEqual(replayedWithDefaults.needs, [entry.nextNeed], `${entry.label}: defaults`);
+    }
+
+    const replayedWithNewNeed = mergeJoziSupportContext(pending, {
+      ...query,
+      needs: [...query.needs, 'food']
+    });
+    assert.deepEqual(replayedWithNewNeed.needs, [entry.nextNeed, 'food'], `${entry.label}: new need`);
+
     const second = resolveJoziSupport(replayed);
     if (entry.second) assert.equal(second.spoken_option_ids[0], entry.second, entry.label);
     if (entry.secondAwaiting) assert.equal(second.awaiting, entry.secondAwaiting, entry.label);

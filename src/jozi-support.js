@@ -2285,15 +2285,17 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   const priorTurnNeeds = Array.isArray(previous.prior_needs)
     ? previous.prior_needs.flatMap(expandSupportCategory)
     : normalizedPreviousNeeds;
-  const callerIsAskingForCurrentRouteDetail = Boolean(
-    current.detail_requested || current.detailRequested ||
+  const currentDetailRequest = normalizeDetailRequested(current.detail_requested || current.detailRequested);
+  const currentCoordinationPreference = normalizeCoordinationPreference(
     current.coordination_preference || current.coordinationPreference
   );
+  const callerIsAskingForCurrentRouteDetail =
+    ['phone', 'hours', 'address', 'directions'].includes(currentDetailRequest) ||
+    ['appointment_request', 'clinician_handoff'].includes(currentCoordinationPreference);
   const continueSinglePendingNeed = Boolean(continuationNeed) && !callerIsAskingForCurrentRouteDetail && (
-    currentNeedValues.length === 0 ||
-    (normalizedCurrentNeeds.includes(continuationNeed) &&
-      normalizedCurrentNeeds.every((need) => priorTurnNeeds.includes(need)))
+    currentNeedValues.length === 0 || normalizedCurrentNeeds.includes(continuationNeed)
   );
+  const newContinuationNeeds = normalizedCurrentNeeds.filter((need) => !priorTurnNeeds.includes(need));
   const hasRawAmbiguousSafeNeed = currentNeedValues.some((need) =>
     /\bsafe\s+(?:sites?|places?)\b/.test(normalizeSearchText(need))
   );
@@ -2315,7 +2317,7 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
     merged.safe_site_type = previousSafeSiteType;
   }
   if (continueSinglePendingNeed) {
-    merged.needs = [continuationNeed];
+    merged.needs = [...new Set([continuationNeed, ...newContinuationNeeds])];
   } else if (hasRawAmbiguousSafeNeed && previousNeedValues.length) {
     merged.needs = [...new Set([...previousNeedValues, ...currentNeedValues])];
   } else if (currentNeedValues.length === 0 && previousNeedValues.length) {
