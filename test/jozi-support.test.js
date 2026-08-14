@@ -62,11 +62,17 @@ test('service modes normalize safely and share one privacy policy', () => {
   assert.equal(serviceModePolicy('health').callerMemory, true);
 });
 
-test('Jozi and combined greetings cover whole-person support and immediate danger', () => {
-  assert.match(buildServiceGreeting('jozi'), /mental wellbeing/i);
-  assert.match(buildServiceGreeting('jozi'), /safe-space and shelter/i);
-  assert.match(buildServiceGreeting('combined'), /health/i);
-  assert.match(buildServiceGreeting('combined'), /immediate danger/i);
+test('Jozi greetings lead with care instead of limitations or a service list', () => {
+  for (const mode of ['jozi', 'combined']) {
+    const regular = buildServiceGreeting(mode, false);
+    const demo = buildServiceGreeting(mode, true);
+    assert.match(demo, /demo line/i);
+    assert.doesNotMatch(regular, /demo/i);
+    assert.match(demo, /here to help/i);
+    assert.doesNotMatch(demo, /cannot|can't|booking|transfer|source-checked|demonstration/i);
+    assert.equal((demo.match(/\?/g) || []).length, 1);
+    assert.ok(demo.split(/\s+/).length <= 28);
+  }
 });
 
 test('Hillbrow overnight-safe-space request routes to MES navigation, not a City office called a safe space', () => {
@@ -78,7 +84,8 @@ test('Hillbrow overnight-safe-space request routes to MES navigation, not a City
   });
   assert.equal(result.success, true);
   assert.deepEqual(ids(result), ['mes-johannesburg-navigation']);
-  assert.match(result.voiceResponse, /does not confirm a walk-in intake/i);
+  assert.match(result.voiceResponse, /MES Johannesburg/i);
+  assert.match(result.options[0].availability_note, /does not confirm a walk-in intake/i);
 });
 
 test('Soweto shelter navigation stays in Soweto and does not guess specialist eligibility', () => {
@@ -101,8 +108,9 @@ test('inner-city adult shelter navigation uses MES and never promises a bed', ()
   });
   assert.equal(result.options[0].id, 'mes-johannesburg-navigation');
   assert.equal(result.availability_confirmed, false);
-  assert.match(result.voiceResponse, /Call before travelling/i);
-  assert.match(result.voiceResponse, /does not confirm.*bed/i);
+  assert.match(result.options[0].availability_note, /Call before travelling/i);
+  assert.match(result.options[0].availability_note, /does not confirm.*bed/i);
+  assert.doesNotMatch(result.voiceResponse, /bed (is|has been) (available|reserved|confirmed)/i);
 });
 
 test('routine mental-health support prefers the dedicated SADAG line', () => {
@@ -167,6 +175,7 @@ test('GBV support prioritizes the specialist line and withholds physical address
     needs: ['gbv_support'],
     location: 'Hillbrow',
     audience: 'adult',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.equal(result.options[0].id, 'gbv-command-centre');
@@ -175,6 +184,7 @@ test('GBV support prioritizes the specialist line and withholds physical address
     location: 'Hillbrow',
     audience: 'adult',
     contact_mode: 'in_person',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   const physical = physicalResult.options[0];
@@ -188,6 +198,7 @@ test('sensitive shelter addresses remain withheld even if a model sends a safe-t
     needs: ['women_children_shelter'],
     location: 'Bellevue',
     audience: 'family',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   };
   const hidden = resolveJoziSupport(base);
@@ -195,7 +206,7 @@ test('sensitive shelter addresses remain withheld even if a model sends a safe-t
   assert.equal(hidden.options[0].address, '');
   const shared = resolveJoziSupport({ ...base, safe_to_share_address: true });
   assert.equal(shared.options[0].address, '');
-  assert.match(shared.voiceResponse, /does not read out the service address/i);
+  assert.doesNotMatch(shared.voiceResponse, /Regent Street|service address/i);
 });
 
 test('child routing excludes adult shelter pathways', () => {
@@ -216,6 +227,7 @@ test('child mental-health and abuse concerns always retain the 24-hour Childline
       needs: [need],
       location: 'Soweto',
       audience: 'child',
+      safe_to_speak: 'yes',
       safety_context: 'none'
     });
     assert.equal(result.options[0]?.id, 'childline-116', `${need} should retain Childline`);
@@ -250,6 +262,7 @@ test('women-and-children shelter intent can route safely before audience details
     needs: ['women_children_shelter'],
     location: 'Bellevue',
     audience: 'unknown',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.equal(result.options[0]?.id, 'frida-hartley-shelter');
@@ -348,6 +361,7 @@ test('women-and-children requests outside a listed shelter area retain a regiona
     needs: ['women_children_shelter'],
     location: 'Orlando East',
     audience: 'unknown',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.equal(result.status, 'specialist_shelter_navigation_required');
@@ -360,6 +374,7 @@ test('broad-area sexual-assault requests retain a specialist phone route while a
     needs: ['sexual_assault_care'],
     location: 'Soweto',
     audience: 'adult',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.equal(result.status, 'source_checked_phone_route_location_needed');
@@ -375,12 +390,14 @@ test('uncovered suburbs retain a phone-first specialist sexual-assault route', (
       needs: ['sexual_assault_care'],
       location,
       audience: 'adult',
+      safe_to_speak: 'yes',
       safety_context: 'none'
     });
     assert.equal(result.status, 'source_checked_phone_route_location_needed');
     assert.ok(result.options.length > 0);
     assert.ok(result.options.every((option) => option.address === ''));
-    assert.match(result.voiceResponse, /phone-first specialist route/i);
+    assert.match(result.voiceResponse, new RegExp(result.options[0].phone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.doesNotMatch(result.voiceResponse, /phone-first specialist route/i);
   }
 });
 
@@ -426,7 +443,8 @@ test('a third need that does not fit the two spoken slots is reported, not silen
   });
   assert.ok(ids(child).includes('childline-116'));
   assert.ok(child.deferred_needs.includes('healthcare'));
-  assert.match(child.voiceResponse, /not yet read a route for healthcare.*limited to two routes/i);
+  assert.match(child.voiceResponse, /come back to .*healthcare next/i);
+  assert.doesNotMatch(child.voiceResponse, /voice response|limited to two routes/i);
 
   const adult = resolveJoziSupport({
     needs: ['shelter_navigation', 'healthcare', 'mental_health'],
@@ -494,8 +512,9 @@ test('location clarification preserves and speaks critical co-needs', () => {
   });
   assert.ok(ids(shelterAndMentalHealth).includes('coj-general-services'));
   assert.ok(ids(shelterAndMentalHealth).includes('sadag-mental-health'));
-  assert.match(shelterAndMentalHealth.voiceResponse, /City of Johannesburg General Services/);
-  assert.match(shelterAndMentalHealth.voiceResponse, /SADAG Cipla Mental Health Helpline/);
+  assert.deepEqual(shelterAndMentalHealth.spoken_option_ids, []);
+  assert.deepEqual(shelterAndMentalHealth.pending_option_ids, ['coj-general-services', 'sadag-mental-health']);
+  assert.match(shelterAndMentalHealth.voiceResponse, /suburb or nearest landmark/i);
 });
 
 test('a specific uncovered suburb reports an unmatched co-need without duplicate filler', () => {
@@ -508,7 +527,7 @@ test('a specific uncovered suburb reports an unmatched co-need without duplicate
   assert.equal(mentalHealthAndClinic.status, 'partial_source_checked_match');
   assert.deepEqual(mentalHealthAndClinic.uncovered_needs, ['healthcare']);
   assert.deepEqual(ids(mentalHealthAndClinic), ['sadag-mental-health']);
-  assert.match(mentalHealthAndClinic.voiceResponse, /cannot confirm a suitable local clinic or hospital route/i);
+  assert.match(mentalHealthAndClinic.voiceResponse, /nearby neighbourhood, clinic, or landmark/i);
   assert.doesNotMatch(mentalHealthAndClinic.voiceResponse, /LifeLine/);
 
   const shelterAndClinic = resolveJoziSupport({
@@ -519,7 +538,7 @@ test('a specific uncovered suburb reports an unmatched co-need without duplicate
   });
   assert.deepEqual(shelterAndClinic.uncovered_needs, ['healthcare']);
   assert.deepEqual(ids(shelterAndClinic), ['coj-general-services']);
-  assert.match(shelterAndClinic.voiceResponse, /cannot confirm a suitable local clinic or hospital route/i);
+  assert.match(shelterAndClinic.voiceResponse, /nearby neighbourhood, clinic, or landmark/i);
 });
 
 test('unknown-age shelter requests never enter the adult MES pathway', () => {
@@ -533,7 +552,7 @@ test('unknown-age shelter requests never enter the adult MES pathway', () => {
     assert.equal(result.needsMoreAudience, true);
     assert.doesNotMatch(ids(result).join(' '), /mes-johannesburg-navigation/);
     assert.doesNotMatch(result.voiceResponse, /Kapteijn Street/i);
-    assert.match(result.voiceResponse, /adult alone.*adult with children.*under 18/i);
+    assert.match(result.voiceResponse, /adult on your own.*adult with children.*under 18/i);
   }
 });
 
@@ -549,7 +568,8 @@ test('in-person preference cannot suppress phone-only safety support in a mixed 
   assert.deepEqual(ids(crisisAndClinic), ['sadag-suicide-crisis', 'hillbrow-community-health-centre']);
   assert.equal(crisisAndClinic.phone_alternative_included, true);
   assert.match(crisisAndClinic.voiceResponse, /SADAG Suicide Crisis Helpline/);
-  assert.match(crisisAndClinic.voiceResponse, /Hillbrow Community Health Centre/);
+  assert.doesNotMatch(crisisAndClinic.voiceResponse, /Hillbrow Community Health Centre/);
+  assert.match(crisisAndClinic.voiceResponse, /come back to healthcare next/i);
 
   const childAndClinic = resolveJoziSupport({
     needs: ['child_safety', 'healthcare'],
@@ -578,11 +598,12 @@ test('mixed requests retain regional navigation for an unmatched shelter or safe
     needs: ['women_children_shelter', 'mental_health'],
     location: 'Soweto',
     audience: 'adult',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.deepEqual(ids(womenAndMentalHealth), ['coj-region-d-social-services', 'sadag-mental-health']);
-  assert.match(womenAndMentalHealth.voiceResponse, /Region D Social Development/);
-  assert.match(womenAndMentalHealth.voiceResponse, /SADAG Cipla Mental Health Helpline/);
+  assert.deepEqual(womenAndMentalHealth.spoken_option_ids, []);
+  assert.match(womenAndMentalHealth.voiceResponse, /suburb or nearest landmark/i);
 
   const safeSpaceAndCrisis = resolveJoziSupport({
     needs: ['safe_space_navigation', 'mental_health_crisis'],
@@ -592,7 +613,8 @@ test('mixed requests retain regional navigation for an unmatched shelter or safe
   });
   assert.deepEqual(ids(safeSpaceAndCrisis), ['sadag-suicide-crisis', 'coj-region-d-social-services']);
   assert.match(safeSpaceAndCrisis.voiceResponse, /SADAG Suicide Crisis Helpline/);
-  assert.match(safeSpaceAndCrisis.voiceResponse, /Region D Social Development/);
+  assert.match(safeSpaceAndCrisis.voiceResponse, /come back to a safe-space pathway next/i);
+  assert.doesNotMatch(safeSpaceAndCrisis.voiceResponse, /Region D Social Development/);
 });
 
 test('unknown audience for a women-and-children request does not hide a critical co-need', () => {
@@ -600,6 +622,7 @@ test('unknown audience for a women-and-children request does not hide a critical
     needs: ['women_children_shelter', 'mental_health_crisis'],
     location: 'Soweto',
     audience: 'unknown',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.ok(ids(crisis).includes('sadag-suicide-crisis'));
@@ -609,6 +632,7 @@ test('unknown audience for a women-and-children request does not hide a critical
     needs: ['women_children_shelter', 'child_safety'],
     location: 'Johannesburg',
     audience: 'unknown',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.ok(ids(childSafety).includes('childline-116'));
@@ -620,13 +644,15 @@ test('uncovered specialist care stays phone-first while another requested route 
     needs: ['sexual_assault_care', 'shelter_navigation'],
     location: 'Alexandra',
     audience: 'adult',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.equal(result.needsMoreLocation, true);
   assert.equal(result.options[0].address, '');
   assert.ok(ids(result).includes('coj-general-services'));
-  assert.match(result.voiceResponse, /phone-first specialist route/i);
-  assert.match(result.voiceResponse, /City of Johannesburg General Services/);
+  assert.match(result.voiceResponse, /011 694 3805/);
+  assert.match(result.voiceResponse, /come back to shelter navigation next/i);
+  assert.doesNotMatch(result.voiceResponse, /City of Johannesburg General Services|phone-first specialist route/i);
   assert.doesNotMatch(result.voiceResponse, /Kapteijn Street|Smit and Klein Streets|Old Potchefstroom Road/i);
 });
 
@@ -636,6 +662,7 @@ test('after-hours specialist care puts a published 24-hour route first', () => {
     location: 'Alexandra',
     audience: 'adult',
     timing: 'tonight',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.equal(specialistOnly.options[0].id, 'nthabiseng-thuthuzela-care-centre');
@@ -645,6 +672,7 @@ test('after-hours specialist care puts a published 24-hour route first', () => {
     location: 'Alexandra',
     audience: 'adult',
     timing: 'tonight',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.deepEqual(ids(specialistAndShelter), ['nthabiseng-thuthuzela-care-centre', 'coj-general-services']);
@@ -657,10 +685,12 @@ test('after-hours specialist care puts a published 24-hour route first', () => {
       location: 'Hillbrow',
       audience: 'adult',
       timing: 'tonight',
+      safe_to_speak: 'yes',
       safety_context: 'none'
     });
     assert.equal(hillbrowTonight.options[0]?.id, 'nthabiseng-thuthuzela-care-centre', need);
-    assert.match(hillbrowTonight.voiceResponse, /phone-first specialist route/i);
+    assert.match(hillbrowTonight.voiceResponse, /011 933 1206/);
+    assert.doesNotMatch(hillbrowTonight.voiceResponse, /phone-first specialist route/i);
   }
 
   const hillbrowMixed = resolveJoziSupport({
@@ -668,6 +698,7 @@ test('after-hours specialist care puts a published 24-hour route first', () => {
     location: 'Hillbrow',
     audience: 'adult',
     timing: 'tonight',
+    safe_to_speak: 'yes',
     safety_context: 'none'
   });
   assert.deepEqual(ids(hillbrowMixed), ['nthabiseng-thuthuzela-care-centre', 'mes-johannesburg-navigation']);
@@ -682,7 +713,7 @@ test('a nighttime community-space co-need does not suppress crisis support', () 
     safety_context: 'none'
   });
   assert.equal(result.options[0].id, 'sadag-suicide-crisis');
-  assert.match(result.voiceResponse, /daytime spaces, not overnight shelter/i);
+  assert.match(result.voiceResponse, /community spaces.*daytime/i);
   assert.match(result.voiceResponse, /SADAG Suicide Crisis Helpline/);
 });
 
@@ -731,8 +762,8 @@ test('adult shelter navigation tonight retains a call-first homelessness route',
     timing: 'tonight'
   });
   assert.equal(result.options[0]?.id, 'mes-johannesburg-navigation');
-  assert.match(result.voiceResponse, /cannot verify.*reachable tonight/i);
-  assert.match(result.voiceResponse, /does not confirm.*bed/i);
+  assert.match(result.voiceResponse, /can't confirm a bed, meal, or intake tonight/i);
+  assert.match(result.options[0].availability_note, /does not confirm.*bed/i);
 });
 
 test('after-hours requests prefer 24-hour navigation and qualify unconfirmed opening', () => {
@@ -754,7 +785,7 @@ test('after-hours requests prefer 24-hour navigation and qualify unconfirmed ope
     timing: 'now'
   });
   assert.equal(now.options[0]?.id, 'soweto-labour-centre');
-  assert.match(now.voiceResponse, /cannot verify.*open.*right now/i);
+  assert.match(now.voiceResponse, /can't confirm current availability/i);
 
   const routineClinic = resolveJoziSupport({
     needs: ['healthcare'],
@@ -764,7 +795,7 @@ test('after-hours requests prefer 24-hour navigation and qualify unconfirmed ope
     timing: 'tonight'
   });
   assert.equal(routineClinic.options[0]?.id, 'hillbrow-community-health-centre');
-  assert.match(routineClinic.voiceResponse, /cannot verify.*open.*tonight/i);
+  assert.match(routineClinic.voiceResponse, /can't confirm tonight's availability/i);
 });
 
 test('a child needing shelter tonight is routed to child safety, not an office-hours adult path', () => {
@@ -827,7 +858,13 @@ test('natural demo terms normalize to canonical support routes', () => {
   ];
   for (const [need, location, expected] of cases) {
     const audience = need === 'child_support' ? 'child' : need === 'women_and_children' ? 'family' : 'adult';
-    const result = resolveJoziSupport({ needs: [need], location, audience, safety_context: 'none' });
+    const result = resolveJoziSupport({
+      needs: [need],
+      location,
+      audience,
+      safe_to_speak: need === 'women_and_children' ? 'yes' : 'unknown',
+      safety_context: 'none'
+    });
     assert.equal(result.options[0]?.id, expected, `${need} should resolve to ${expected}`);
   }
 });
@@ -835,7 +872,7 @@ test('natural demo terms normalize to canonical support routes', () => {
 test('voice responses never automatically offer SMS or WhatsApp', () => {
   for (const query of [
     { needs: ['shelter_navigation'], location: 'Hillbrow', audience: 'adult', safety_context: 'none' },
-    { needs: ['women_children_shelter'], location: 'Bellevue', audience: 'family', safety_context: 'none' },
+    { needs: ['women_children_shelter'], location: 'Bellevue', audience: 'family', safe_to_speak: 'yes', safety_context: 'none' },
     { needs: ['substance_use_support'], location: 'Soweto', audience: 'adult', safety_context: 'none' }
   ]) {
     assert.doesNotMatch(resolveJoziSupport(query).voiceResponse, /whatsapp|\bsms\b/i);
@@ -866,11 +903,11 @@ test('demo coordination is explicit about non-submission and non-confirmation', 
   assert.equal(result.simulation, true);
   assert.equal(result.submitted, false);
   assert.equal(result.confirmed, false);
-  assert.match(result.voiceResponse, /doctor would join shortly/i);
-  assert.match(result.voiceResponse, /No live doctor/i);
+  assert.match(result.voiceResponse, /demo now shows a doctor joining shortly/i);
+  assert.match(result.voiceResponse, /no live doctor/i);
 });
 
-test('demo appointment is a prepared simulation and never presented as booked', () => {
+test('demo appointment leads with a positive booking simulation and then scopes it truthfully', () => {
   const result = coordinateJoziSupport({
     resource_id: 'zola-clinic',
     action: 'appointment_request',
@@ -881,8 +918,8 @@ test('demo appointment is a prepared simulation and never presented as booked', 
   assert.equal(result.success, true);
   assert.equal(result.status, 'simulation_only');
   assert.equal(result.live_success, false);
-  assert.match(result.voiceResponse, /simulated appointment request.*tomorrow at 10 AM.*prepared/i);
-  assert.match(result.voiceResponse, /Nothing has been sent, booked, or confirmed/i);
+  assert.match(result.voiceResponse, /^All set—the demo now shows your appointment.*booked for tomorrow at 10 AM/i);
+  assert.match(result.voiceResponse, /was not contacted.*no real appointment is booked/i);
 });
 
 test('demo coordination cannot run when demo mode is disabled or action is unsupported', () => {
@@ -898,6 +935,30 @@ test('demo coordination cannot run when demo mode is disabled or action is unsup
     demo_enabled: true
   });
   assert.equal(unsupported.error, 'demo_action_not_supported');
+});
+
+test('demo coordination is limited to the exact resource and action offered for consent', () => {
+  const common = {
+    resource_id: 'hillbrow-community-health-centre',
+    offered_resource_ids: ['hillbrow-community-health-centre'],
+    require_offered_resource: true,
+    required_action: 'appointment_request',
+    require_offered_action: true,
+    demo_enabled: true
+  };
+  const wrongAction = coordinateJoziSupport({ ...common, action: 'clinician_handoff' });
+  assert.equal(wrongAction.error, 'demo_action_not_offered_in_call');
+
+  const unspokenResource = coordinateJoziSupport({
+    ...common,
+    resource_id: 'sadag-mental-health',
+    action: 'warm_handoff'
+  });
+  assert.equal(unspokenResource.error, 'resource_not_offered_in_call');
+
+  const accepted = coordinateJoziSupport({ ...common, action: 'appointment_request' });
+  assert.equal(accepted.success, true);
+  assert.equal(accepted.action, 'appointment_request');
 });
 
 test('all resolver paths are deterministic and network-free', () => {

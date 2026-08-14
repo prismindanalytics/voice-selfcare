@@ -580,7 +580,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     simulationActions: ['appointment_request', 'clinician_handoff'],
     allowNavigationMatch: true,
     description: 'A community health centre providing routine healthcare; the City separately lists emergency and victim-friendly services as available 24 hours.',
-    availabilityNote: 'Call first for routine care. A demo appointment or clinician handoff is not a live booking or transfer. For a life-threatening emergency, call emergency services.',
+    availabilityNote: 'Call first to confirm routine-care hours, the current queue, and appointment arrangements. For a life-threatening emergency, call emergency services.',
     sourceUrl: 'https://joburg.org.za/about_/regions/Pages/Region%20F%20-%20Inner%20City/REGION%20F%20Clinics/REGION-F-CLINICS.aspx',
     sourceCheckedAt: JOZI_DIRECTORY_SOURCE_CHECKED_AT,
     verificationMethod: PUBLIC_SOURCE,
@@ -622,7 +622,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'],
     simulationActions: ['appointment_request', 'clinician_handoff'],
     description: 'A City clinic serving Jeppestown and nearby inner-city areas.',
-    availabilityNote: 'Call first to confirm the needed service and current arrangements. A demo appointment or clinician handoff is not live.',
+    availabilityNote: 'Call first to confirm the needed service, current hours, and appointment arrangements.',
     sourceUrl: 'https://joburg.org.za/about_/regions/Pages/Region%20F%20-%20Inner%20City/REGION%20F%20Clinics/REGION-F-CLINICS.aspx',
     sourceCheckedAt: JOZI_DIRECTORY_SOURCE_CHECKED_AT,
     verificationMethod: PUBLIC_SOURCE,
@@ -644,7 +644,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'],
     simulationActions: ['appointment_request', 'clinician_handoff'],
     description: 'A City clinic serving Yeoville, Berea, and nearby areas.',
-    availabilityNote: 'Call first to confirm the needed service and current arrangements. A demo appointment or clinician handoff is not live.',
+    availabilityNote: 'Call first to confirm the needed service, current hours, and appointment arrangements.',
     sourceUrl: 'https://joburg.org.za/about_/regions/Pages/Region%20F%20-%20Inner%20City/REGION%20F%20Clinics/REGION-F-CLINICS.aspx',
     sourceCheckedAt: JOZI_DIRECTORY_SOURCE_CHECKED_AT,
     verificationMethod: PUBLIC_SOURCE,
@@ -665,7 +665,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'],
     simulationActions: ['appointment_request', 'clinician_handoff'],
     description: 'A City primary-care clinic serving Zola and nearby Soweto communities.',
-    availabilityNote: 'Routine public clinic access is listed, but call to confirm the needed service and current queue. A demo appointment or clinician handoff is not live.',
+    availabilityNote: 'Routine public clinic access is listed, but call to confirm the needed service, current hours, and queue.',
     sourceUrl: 'https://joburg.org.za/about_/regions/Pages/Region%20D%20-%20Greater%20Soweto/Clinics-in-Region-D.aspx',
     operationalStatus: 'public_site_and_hours_source_checked_live_queue_unconfirmed'
   }),
@@ -684,7 +684,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'],
     simulationActions: ['appointment_request', 'clinician_handoff'],
     description: 'A City primary-care clinic serving Chiawelo and nearby Soweto communities.',
-    availabilityNote: 'Routine public clinic access is listed, but call to confirm the needed service and current queue. A demo request is not a live appointment.',
+    availabilityNote: 'Routine public clinic access is listed, but call to confirm the needed service, current hours, and queue.',
     sourceUrl: 'https://joburg.org.za/about_/regions/Pages/Region%20D%20-%20Greater%20Soweto/Clinics-in-Region-D.aspx',
     operationalStatus: 'public_site_and_hours_source_checked_live_queue_unconfirmed'
   }),
@@ -703,7 +703,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'],
     simulationActions: ['appointment_request', 'clinician_handoff'],
     description: 'A City primary-care clinic serving Dobsonville and nearby Soweto communities.',
-    availabilityNote: 'Routine public clinic access is listed, but call to confirm the needed service and current queue. A demo request is not a live appointment.',
+    availabilityNote: 'Routine public clinic access is listed, but call to confirm the needed service, current hours, and queue.',
     sourceUrl: 'https://joburg.org.za/about_/regions/Pages/Region%20D%20-%20Greater%20Soweto/Clinics-in-Region-D.aspx',
     operationalStatus: 'public_site_and_hours_source_checked_live_queue_unconfirmed'
   }),
@@ -860,7 +860,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'unknown'],
     simulationActions: ['clinician_handoff', 'navigator_handoff'],
     description: 'Specialised medical, forensic, and support care after sexual assault or gender-based violence.',
-    availabilityNote: 'First ask whether it is safe to speak and share a destination. Preserve the caller’s choice and privacy; a demo handoff is not a live transfer.',
+    availabilityNote: 'First ask whether it is safe to speak and share a destination. Preserve the caller’s choice and privacy.',
     sourceUrl: 'https://cmbinary.gauteng.gov.za/Media?Item=1534&Location=%2Fcphealth&Type=Documents&path=cphealth%2FDocuments%2FGauteng+Department+of+Health+Clinical+Forensic+Medical+Services+Booklet_final.pdf',
     supportingSourceUrl: 'https://cmbinary.gauteng.gov.za/Media?Item=1753&Location=%2Fcphealth&Type=Documents&path=cphealth%2FDocuments%2FNews+Bulletin+-+15++December+2024.pdf',
     operationalStatus: 'public_specialist_site_and_hours_source_checked_live_queue_unconfirmed'
@@ -1261,25 +1261,33 @@ You can help with mental wellbeing, social support, shelter and safe-space navig
 
 SAFETY AND DIGNITY
 - Say "people experiencing homelessness" or "people with low or no income". Never call a caller low-LSM or assume they are homeless.
-- Start by asking what would help most. Ask only one short question at a time.
+- Start by asking what would help most. Do not open with limitations, disclaimers, a service list, or what the line cannot do.
+- Sound like a caring human being, not an information line. Briefly acknowledge what the caller said, name the immediate priority, take one step, and pause.
+- Use natural spoken English, contractions, and short sentences. Avoid internal words such as "route", "directory", "source-checked", "warm handoff", "voice response", and "navigation fallback" when speaking to the caller.
+- Ask only one short question at a time. Never ask a question and then continue into a list of organisations or instructions.
+- When the caller has several needs, acknowledge all of them but handle the most urgent practical need first. Say which need you will return to next rather than giving everything at once.
 - Before ordinary routing, ask one brief question about immediate danger, severe medical symptoms, or whether the person might harm themselves.
 - For immediate danger, medical emergency, imminent self-harm, overdose, or violence now, use the emergency tool immediately. Ask for a suburb or nearest landmark, not an exact sleeping location.
-- For GBV, first ask whether it is safe to speak. Do not promise police involvement, text the caller, or disclose their location without consent.
+- For GBV, first ask whether it is safe to speak and pass that answer to find_support_services. Do not promise police involvement, text the caller, or disclose their location without consent.
 - A child or family must never be routed to an adult shelter pathway.
 - Do not ask for immigration status, income bracket, or ID unless that detail is strictly necessary for the caller's chosen service.
 
 ROUTING
 - Use find_support_services for all community-support destinations. Never invent a provider, phone number, address, hours, bed, meal, or eligibility rule.
 - Clarify what "safe space" means: danger now, somewhere for tonight, a daytime support point, child/family safety, GBV support, or simply someone to talk to.
-- Give at most two options. State the name, purpose, telephone number, and address only when the directory marks it as a service site.
-- Always repeat the directory caveat: published details were source-checked, but hours, intake, eligibility, and availability can change; call before travelling.
+- Recommend one best next step at a time. Give a second option only after the first is declined, unavailable, or completed, unless two distinct urgent needs must be addressed immediately.
+- Use progressive disclosure: first say the organisation and why it fits; then ask permission to check, book, or connect in the demo. Give the phone number, directions, or hours only when they are the next useful detail or the caller asks.
+- Say only the uncertainty that changes the next action, and say it once. Do not stack a description, phone number, address, hours, and every caveat into one turn.
 - The City policy requires social-worker assessment and referral for City-managed or contracted shelter placement. Do not assess eligibility, book a real bed, or promise availability.
 - If the directory has no suitable local option, say so plainly and offer the City navigation route. Do not substitute a distant physical destination.
 
 DEMO COORDINATION
 - coordinate_support_demo is a presentation-only simulation. Use it only after the caller chooses a returned resource.
-- Say "For this demonstration, a simulated request has been prepared" or "the next screen shows how a doctor handoff would work," immediately followed by "Nothing has been sent, booked, checked, or transferred live."
-- Never present a demo reference, appointment, clinician handoff, shelter check, assessment, or transfer as live.
+- Do not announce the simulation rules at the start of the call or before offering help.
+- When the caller agrees, call coordinate_support_demo immediately. Lead with the positive demo screen state, such as "All set—the demo now shows your appointment booked" or "The demo connection screen is ready."
+- In the same short turn, say that the demonstration is not connected to the external organisation, so no real booking, reservation, check, or transfer occurred.
+- Never omit the word "demo" from the simulated outcome and never present it as a live external action.
+- After the demo action, return conversationally to any need that is still waiting instead of reading a recap.
 
 PRIVACY
 - Do not offer SMS or WhatsApp. The Jozi demo is voice-only.
@@ -1320,14 +1328,11 @@ export function buildServiceGreeting(mode, demoEnabled = false) {
   if (normalized === 'health') {
     return "Hello, thank you for calling. This is your health advisor. I'm here to help. What health concern can we talk through today?";
   }
+  const demoLabel = demoEnabled ? ' demo' : '';
   if (normalized === 'jozi') {
-    return demoEnabled
-      ? 'Hello, you have reached the Jozi support demonstration line. I can show source-checked support routes, but I cannot make a live booking or transfer. If anyone is in immediate danger, please tell me now. What would help most today?'
-      : 'Hello, you have reached the Jozi support line. I can help with mental wellbeing, social support, safe-space and shelter navigation, clinics, and practical help. If anyone is in immediate danger, please tell me now. What would help most today?';
+    return `Hello, you've reached the Jozi support${demoLabel} line. I'm here to help. What would help most right now?`;
   }
-  return demoEnabled
-    ? 'Hello, you have reached the Jozi health and support demonstration line. I can show source-checked health and support routes, but I cannot make a live booking or transfer. If anyone is in immediate danger, please tell me now. What would help most today?'
-    : 'Hello, you have reached the Jozi health and support line. I can help with health, mental wellbeing, social support, safe-space and shelter navigation, and practical help. If anyone is in immediate danger, please tell me now. What would help most today?';
+  return `Hello, you've reached the Jozi health and support${demoLabel} line. I'm here to help. What would help most right now?`;
 }
 
 export function normalizeSupportCategory(value) {
@@ -1365,6 +1370,7 @@ export function validateJoziResources(resources = JOZI_SUPPORT_RESOURCES, now = 
 
 export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES) {
   let needs = normalizeNeeds(args);
+  const demoEnabled = args.demo_enabled === true;
   const location = normalizeJoziLocation(args.location || args.landmark || args.area || '');
   const audience = normalizeAudience(args.audience || args.caller_type);
   const contactMode = normalizeContactMode(args.contact_mode || args.contactMode);
@@ -1377,7 +1383,41 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
   }
 
   if (!needs.length) {
-    return noMatch('support_need_required', needs, args.location, 'What kind of help would be most useful: somewhere safe, someone to talk to, food, a clinic, documents, work, or another need?');
+    return noMatch('support_need_required', needs, args.location, 'What feels most urgent right now: safety, health, food, or someone to talk to?');
+  }
+
+  const safeToSpeak = normalizeSafeToSpeak(args.safe_to_speak || args.safeToSpeak);
+  const privacySensitiveNeed = needs.some((need) => [
+    'gbv_support',
+    'gbv_healthcare',
+    'sexual_assault_care',
+    'victim_friendly_healthcare',
+    'abuse_support',
+    'women_children_shelter'
+  ].includes(need));
+  if (privacySensitiveNeed && safeToSpeak !== 'yes') {
+    const callerSaidNo = safeToSpeak === 'no';
+    return {
+      success: false,
+      status: callerSaidNo ? 'unsafe_to_speak' : 'privacy_clarification_required',
+      error: callerSaidNo ? 'caller_cannot_speak_safely' : 'safe_to_speak_required',
+      needs,
+      location: args.location || '',
+      audience,
+      timing,
+      needsMoreLocation: false,
+      needsMoreAudience: false,
+      options: [],
+      availability_confirmed: false,
+      spoken_option_ids: [],
+      pending_option_ids: [],
+      next_need: needs[0] || '',
+      awaiting: callerSaidNo ? 'end_or_continue' : 'safe_to_speak',
+      suggested_demo_action: '',
+      voiceResponse: callerSaidNo
+        ? "Okay. I won't name a service or ask for details. Would you like to end the call now?"
+        : 'Before we go further, is it safe for you to speak right now?'
+    };
   }
 
   if (audience === 'child' && needs.some((need) => ['shelter_navigation', 'safe_space_navigation'].includes(need))) {
@@ -1401,7 +1441,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       'daytime_space_not_available_tonight',
       needs,
       args.location,
-      'The curated community venues are daytime spaces, not overnight shelter. Do you need somewhere for tonight, immediate safety help, or a daytime place tomorrow?'
+      'The community places I have are for daytime, not overnight shelter. Do you need somewhere for tonight, immediate safety help, or a daytime place tomorrow?'
     );
   }
 
@@ -1471,7 +1511,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         'specific_location_required',
         needs,
         args.location,
-        `${['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : ''}Which Johannesburg or Soweto neighbourhood, clinic name, or nearest landmark should I use? I will not guess a distant clinic.`
+        `I want to make sure I do not send you too far. ${['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : ''}Which Johannesburg or Soweto neighbourhood, clinic name, or nearest landmark should I use?`
       );
     }
     if (needs.includes('women_children_shelter')) {
@@ -1491,7 +1531,12 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
           needsMoreLocation: !usefulLocation,
           options: [option],
           availability_confirmed: false,
-          voiceResponse: `I cannot confirm a suitable women-and-children shelter in that area from this directory. ${buildSupportVoiceResponse(option, timing)}`
+          spoken_option_ids: [option.id],
+          pending_option_ids: [],
+          next_need: 'women_children_shelter',
+          awaiting: 'detail_preference',
+          suggested_demo_action: '',
+          voiceResponse: `I hear you. I do not have a confirmed women-and-children shelter place in that area. ${option.name} can help you find the right service on ${option.phone}. Would you like me to repeat the number?`
         };
       }
     }
@@ -1508,16 +1553,25 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       timing,
       needsMoreLocation: !usefulLocation,
       options: fallbackOption,
+      spoken_option_ids: fallbackOption.map((option) => option.id),
+      pending_option_ids: [],
+      next_need: needs[0] || '',
+      awaiting: fallbackOption.length ? 'detail_preference' : 'location',
+      suggested_demo_action: '',
       voiceResponse: fallbackOption.length
-        ? `I cannot confirm a suitable local destination from this directory. ${buildSupportVoiceResponse(fallbackOption[0], timing)}`
-        : 'I cannot confirm a suitable service from the curated Jozi directory yet. I can try another type of support or a different area.'
+        ? `I have not found a suitable local place yet. You can call ${fallbackOption[0].name} on ${fallbackOption[0].phone} for help finding the right service. Would you like me to repeat the number?`
+        : 'I have not found a suitable local option yet. What nearby area or another kind of help should I try?'
     };
   }
 
   const maxOptions = clamp(Number(args.max_options) || 2, 1, 2);
   const selectedCandidates = selectDiverseCandidates(matched, needs, maxOptions);
   const selected = selectedCandidates.map(({ resource }) => publicResource(resource));
-  const spokenNeeds = maximumCoveredNeeds(selectedCandidates, needs);
+  const oneResourceHandlesEveryNeed = selectedCandidates.length === 1 &&
+    needs.every((need) => resourceScoresForNeed(selectedCandidates[0].resource, need));
+  const spokenNeeds = oneResourceHandlesEveryNeed
+    ? new Set(needs)
+    : maximumCoveredNeeds(selectedCandidates, needs);
   const deferredNeeds = needs.filter((need) =>
     !spokenNeeds.has(need) && matched.some((candidate) => candidateMatchesNeed(candidate, need))
   );
@@ -1531,39 +1585,26 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
   const shelterAudienceNeeded = audience === 'unknown' && needs.some((need) => ['shelter_navigation', 'safe_space_navigation'].includes(need));
   const needsMoreLocation = healthLocationNeeded || supportLocationNeeded || specialistLocationNeeded || uncoveredNeeds.length > 0 ||
     (!usefulLocation && selected.some((option) => option.contact_modes.includes('in_person')));
-  const voiceNotices = [];
-  if (shelterAudienceNeeded) {
-    voiceNotices.push('Before choosing a shelter or safe-space pathway, are you an adult alone, an adult with children, or under 18? I will not route an unknown-age caller to an adult shelter.');
-  }
-  if (specialistShelterNavigation) {
-    voiceNotices.push('I cannot confirm a suitable local women-and-children shelter from this directory, so this is a social-service navigation route, not a shelter place.');
-  }
-  if (specialistLocationNeeded) {
-    voiceNotices.push('I need a suburb or nearest landmark before suggesting a physical specialist destination. I can give a phone-first specialist route now.');
-  } else if (healthLocationNeeded) {
-    voiceNotices.push(`${['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : ''}Which Johannesburg or Soweto neighbourhood, clinic name, or nearest landmark should I use? I will not guess a distant clinic.`);
-  } else if (uncoveredHealthNeeds.length) {
-    voiceNotices.push(`${['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : ''}I cannot confirm a suitable local clinic or hospital route for that area from this directory. Tell me another nearby neighbourhood, clinic name, or landmark and I will not guess a distant service.`);
-  } else if (supportLocationNeeded) {
-    voiceNotices.push('Which suburb or nearest landmark should I use? I will not guess a physical support destination.');
-  }
   const otherUncoveredNeeds = uncoveredNeeds.filter((need) => !healthNeeds.includes(need));
-  if (otherUncoveredNeeds.length) {
-    voiceNotices.push(`I could not confirm a suitable local route for ${otherUncoveredNeeds.map(humanSupportNeed).join(' and ')} from this directory. I can try a different area or help with that need next.`);
-  }
-  if (deferredNeeds.length) {
-    voiceNotices.push(`I have not yet read a route for ${deferredNeeds.map(humanSupportNeed).join(' and ')} because this voice response is limited to two routes. I can handle that next.`);
-  }
-  if (daytimeSpaceUnavailableTonight) {
-    voiceNotices.push('The curated community venues are daytime spaces, not overnight shelter.');
-  }
   const phoneAlternativeIncluded = contactMode === 'in_person' && selected.some((option) =>
     option.contact_modes.length === 1 && option.contact_modes[0] === 'phone'
   );
-  if (phoneAlternativeIncluded) {
-    voiceNotices.push('I could not verify an in-person route for every need, so one of these routes is phone support.');
-  }
-  voiceNotices.push(buildSupportVoiceResponses(selected, timing));
+  const conversation = buildConversationalSupportResponse({
+    needs,
+    selected,
+    selectedCandidates,
+    timing,
+    demoEnabled,
+    shelterAudienceNeeded,
+    specialistShelterNavigation,
+    specialistLocationNeeded,
+    healthLocationNeeded,
+    supportLocationNeeded,
+    uncoveredHealthNeeds,
+    otherUncoveredNeeds,
+    deferredNeeds,
+    daytimeSpaceUnavailableTonight
+  });
   const onlyPhoneAlternatives = contactMode === 'in_person' && selected.length > 0 && selected.every((option) =>
     option.contact_modes.length === 1 && option.contact_modes[0] === 'phone'
   );
@@ -1607,7 +1648,12 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     availability_confirmed: false,
     phone_alternative_included: phoneAlternativeIncluded,
     phoneAlternatives: onlyPhoneAlternatives,
-    voiceResponse: voiceNotices.join(' ')
+    spoken_option_ids: conversation.spokenOptionIds,
+    pending_option_ids: conversation.pendingOptionIds,
+    next_need: conversation.nextNeed,
+    awaiting: conversation.awaiting,
+    suggested_demo_action: conversation.suggestedDemoAction,
+    voiceResponse: conversation.voiceResponse
   };
 }
 
@@ -1624,6 +1670,7 @@ export function coordinateJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOUR
     };
   }
 
+  const action = String(args.action || '').trim().toLowerCase();
   const offeredIds = Array.isArray(args.offered_resource_ids) ? args.offered_resource_ids.map(String) : [];
   if (args.require_offered_resource && !offeredIds.includes(resource.id)) {
     return {
@@ -1637,7 +1684,19 @@ export function coordinateJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOUR
     };
   }
 
-  const action = String(args.action || '').trim().toLowerCase();
+  const requiredAction = String(args.required_action || '').trim().toLowerCase();
+  if (args.require_offered_action && (!requiredAction || action !== requiredAction)) {
+    return {
+      success: false,
+      status: 'simulation_rejected',
+      simulation: true,
+      submitted: false,
+      confirmed: false,
+      error: 'demo_action_not_offered_in_call',
+      voiceResponse: 'Let us choose that demo step together before I start it.'
+    };
+  }
+
   if (!resource.simulationActions.includes(action)) {
     return {
       success: false,
@@ -1665,13 +1724,13 @@ export function coordinateJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOUR
   const reference = String(args.reference_id || 'DEMO').trim();
   const when = String(args.requested_time || 'the requested time').trim();
   const messages = {
-    appointment_request: `For this demonstration, a simulated appointment request for ${resource.name} at ${when} is prepared, reference ${reference}. Nothing has been sent, booked, or confirmed with the service.`,
-    clinician_handoff: `For this demonstration, the next screen shows how a doctor would join shortly, reference ${reference}. No live doctor has been contacted or connected.`,
-    availability_check: `For this demonstration, a simulated availability check with ${resource.name} is prepared, reference ${reference}. No live availability was checked and no bed, meal, or service is reserved.`,
-    intake_request: `For this demonstration, a simulated intake request with ${resource.name} is prepared, reference ${reference}. Nothing has been sent and no intake or shelter place is confirmed.`,
-    navigator_handoff: `For this demonstration, a simulated navigator handoff to ${resource.name} is prepared, reference ${reference}. No live transfer or request has occurred.`,
-    warm_handoff: `For this demonstration, the next screen shows how a warm handoff to ${resource.name} would work, reference ${reference}. No live transfer has occurred.`,
-    assessment_request: `For this demonstration, a simulated assessment request with ${resource.name} is prepared, reference ${reference}. Nothing has been sent and no assessment is confirmed.`
+    appointment_request: `All set—the demo now shows your appointment at ${resource.name} booked for ${when}. ${resource.name} was not contacted, so no real appointment is booked.`,
+    clinician_handoff: 'Please hold—the demo now shows a doctor joining shortly. No live doctor has been contacted or connected.',
+    availability_check: `All set—the demo now shows the availability check with ${resource.name} as complete. ${resource.name} was not contacted, so no live availability was checked and nothing was reserved.`,
+    intake_request: `All set—the demo now shows the intake check with ${resource.name} as complete. ${resource.name} was not contacted, so no real request was sent and no place or meal was reserved.`,
+    navigator_handoff: `All set—the demo redirection screen for ${resource.name} is ready. No call or transfer to ${resource.name} has been made.`,
+    warm_handoff: `Stay with me—the demo connection screen for ${resource.name} is ready. No call has been placed and nobody is connected.`,
+    assessment_request: `All set—the demo now shows the assessment request with ${resource.name} as ready. ${resource.name} was not contacted, so no real assessment was requested.`
   };
 
   return {
@@ -1711,7 +1770,7 @@ function buildUrgentEscalation({ safetyContext, location, audience, resources, p
   if (audience === 'child') ids.push('childline-116');
   const options = ids.map((id) => resources.find((resource) => resource.id === id)).filter(Boolean).map(publicResource);
   const first = options[0];
-  const landmark = location ? 'Give the operator your nearest landmark' : 'Ask the caller for the nearest landmark';
+  const landmark = 'Tell the operator your nearest landmark';
   return {
     success: true,
     status: 'urgent_escalation',
@@ -1720,7 +1779,7 @@ function buildUrgentEscalation({ safetyContext, location, audience, resources, p
     options,
     selected: first,
     availability_confirmed: false,
-    voiceResponse: `${first ? `Call ${first.phone} now. ` : ''}${landmark}, say what happened, and stay on the line. Do not wait for an ordinary service lookup.`
+    voiceResponse: `${first ? `Call ${first.phone} now. ` : ''}${landmark}, say what happened, and stay on the line.`
   };
 }
 
@@ -1751,6 +1810,13 @@ function normalizeTiming(value) {
   const normalized = normalizeSupportCategory(value || 'routine');
   if (['now', 'immediate'].includes(normalized)) return 'now';
   return ['today', 'tonight', 'routine'].includes(normalized) ? normalized : 'routine';
+}
+
+function normalizeSafeToSpeak(value) {
+  const normalized = normalizeSupportCategory(value || 'unknown');
+  if (['yes', 'true', 'safe'].includes(normalized)) return 'yes';
+  if (['no', 'false', 'unsafe'].includes(normalized)) return 'no';
+  return 'unknown';
 }
 
 function deriveUrgentSafetyContext(statedSafetyContext, needs) {
@@ -1838,6 +1904,11 @@ function addCoveredCandidate(candidates, candidate, need) {
 }
 
 function selectDiverseCandidates(matched, needs, maxOptions) {
+  const completeCandidate = matched.find((candidate) =>
+    needs.length > 1 && needs.every((need) => resourceScoresForNeed(candidate.resource, need))
+  );
+  if (completeCandidate) return [completeCandidate];
+
   const selected = [];
   const priorityNeeds = needs
     .map((need, index) => ({ need, index, priority: needPriority(need) }))
@@ -1863,8 +1934,16 @@ function selectDiverseCandidates(matched, needs, maxOptions) {
   return selected;
 }
 
+function resourceScoresForNeed(resource, need) {
+  return scoreCategories(resource, [need]) > 0;
+}
+
 function candidateMatchesNeed(candidate, need) {
   return candidate.coveredNeeds?.includes(need) || resourceMatchesNeed(candidate.resource, need);
+}
+
+function candidateConversationallyCoversNeed(candidate, need) {
+  return candidate.coveredNeeds?.includes(need) || resourceScoresForNeed(candidate.resource, need);
 }
 
 function maximumCoveredNeeds(candidates, needs) {
@@ -2038,6 +2117,7 @@ function publicResource(resource) {
     phone: resource.phone || '',
     hours: resource.hours || 'Confirm when calling',
     audiences: resource.audiences,
+    demo_actions: resource.simulationActions || [],
     description: resource.description,
     availability_note: resource.availabilityNote,
     source_url: resource.sourceUrl,
@@ -2049,44 +2129,220 @@ function publicResource(resource) {
   };
 }
 
-function buildSupportVoiceResponse(resource, timing = 'routine') {
-  const timingCaveat = ['now', 'tonight'].includes(timing) && !isPublished24Hour(resource)
-    ? `I cannot verify that ${resource.name} is open or reachable ${timing === 'tonight' ? 'tonight' : 'right now'}. `
-    : '';
+function buildSupportVoiceResponse(resource, timing = 'routine', needs = []) {
+  const purpose = spokenPurpose(resource, needs);
+  const isMesOvernightNeed = resource.id === 'mes-johannesburg-navigation' &&
+    timing === 'tonight' &&
+    needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'food'].includes(need));
+  const timingCaveat = isMesOvernightNeed
+    ? " I can't confirm a bed, meal, or intake tonight."
+    : ['now', 'tonight'].includes(timing) && !isPublished24Hour(resource)
+      ? ` I can't confirm ${timing === 'tonight' ? "tonight's" : 'current'} availability.`
+      : '';
   if (resource.routing_mode === 'emergency_phone') {
-    return `${timingCaveat}Call ${resource.phone} now. ${resource.availability_note}`.trim();
+    return `Call ${resource.phone} now.`;
+  }
+  if (resource.address_withheld_for_safety && resource.phone) {
+    return `${resource.name} can help with ${purpose} on ${resource.phone}.${timingCaveat}`.trim();
   }
   if (resource.routing_mode === 'phone_only' || resource.routing_mode === 'navigation_only') {
-    return `${timingCaveat}Call ${resource.name} on ${resource.phone}. ${resource.description} ${resource.availability_note}`.trim();
-  }
-  if (resource.routing_mode === 'source_listed_walk_in') {
-    if (resource.address_withheld_for_safety) {
-      return `${timingCaveat}Call ${resource.name} on ${resource.phone}. For safety, this voice line does not read out the service address. ${resource.availability_note}`.trim();
+    if (purpose === 'someone to talk to') {
+      return `You can call ${resource.name} now on ${resource.phone} for someone to talk to.${timingCaveat}`.trim();
     }
-    if (!resource.phone) {
-      return `${timingCaveat}${resource.name} is source-listed at ${resource.address}. No direct phone number is published in the City directory. ${resource.availability_note}`.trim();
-    }
-    return `${timingCaveat}${resource.name} is source-listed at ${resource.address}. Call ${resource.phone} to confirm before travelling. ${resource.availability_note}`.trim();
+    return `${resource.name} can help with ${purpose} on ${resource.phone}.${timingCaveat}`.trim();
   }
-  if (resource.address_withheld_for_safety) {
-    return `${timingCaveat}Call ${resource.name} on ${resource.phone} before visiting. For safety, this voice line does not read out the service address. ${resource.availability_note}`.trim();
+  if (needs.includes('daytime_community_space')) {
+    return `${resource.name} is a daytime community place, not a shelter or a guaranteed safe space.${timingCaveat}`.trim();
   }
-  return `${timingCaveat}Call ${resource.name} on ${resource.phone} before visiting. Its listed ${humanAddressRole(resource.address_role)} is ${resource.address}. ${resource.availability_note}`.trim();
+  const phoneStep = resource.phone ? ` Call ${resource.phone}.` : '';
+  return `${resource.name} is the best first place to try for ${purpose}.${phoneStep}${timingCaveat}`.trim();
 }
 
-function buildSupportVoiceResponses(resources, timing = 'routine') {
-  const options = (resources || []).filter(Boolean);
-  if (!options.length) return '';
-  if (options.length === 1) return buildSupportVoiceResponse(options[0], timing);
-  return options
-    .map((resource, index) => `${index === 0 ? 'First route' : 'Another route'}: ${buildSupportVoiceResponse(resource, timing)}`)
-    .join(' ');
+function buildConversationalSupportResponse({
+  needs,
+  selected,
+  selectedCandidates,
+  timing,
+  demoEnabled,
+  shelterAudienceNeeded,
+  specialistShelterNavigation,
+  specialistLocationNeeded,
+  healthLocationNeeded,
+  supportLocationNeeded,
+  uncoveredHealthNeeds,
+  otherUncoveredNeeds,
+  deferredNeeds,
+  daytimeSpaceUnavailableTonight
+}) {
+  const first = selected[0];
+  const lead = careLead(needs);
+  const allOptionIds = selected.map((option) => option.id);
+  const criticalFirst = Boolean(selectedCandidates[0] && needs.some((need) =>
+    needPriority(need) >= 90 && resourceScoresForNeed(selectedCandidates[0].resource, need)
+  ));
+
+  if (shelterAudienceNeeded && !criticalFirst) {
+    return {
+      voiceResponse: `${lead} Are you an adult on your own, an adult with children, or under 18?`,
+      spokenOptionIds: [],
+      pendingOptionIds: allOptionIds,
+      nextNeed: needs.find((need) => ['shelter_navigation', 'safe_space_navigation'].includes(need)) || '',
+      awaiting: 'audience',
+      suggestedDemoAction: ''
+    };
+  }
+
+  if (supportLocationNeeded && !specialistLocationNeeded && !criticalFirst) {
+    return {
+      voiceResponse: `${lead} Which suburb or nearest landmark are you near?`,
+      spokenOptionIds: [],
+      pendingOptionIds: allOptionIds,
+      nextNeed: needs[0] || '',
+      awaiting: 'location',
+      suggestedDemoAction: ''
+    };
+  }
+
+  const sentences = [lead];
+  if (first) sentences.push(buildSupportVoiceResponse(first, timing, needs));
+
+  const firstResource = selectedCandidates[0]?.resource;
+  const firstCandidate = selectedCandidates[0];
+  const handledNow = new Set(firstResource
+    ? needs.filter((need) => candidateConversationallyCoversNeed(firstCandidate, need))
+    : []);
+  const waitingNeeds = needs.filter((need) =>
+    !handledNow.has(need) && !uncoveredHealthNeeds.includes(need) && !otherUncoveredNeeds.includes(need)
+  );
+
+  if (daytimeSpaceUnavailableTonight) {
+    sentences.push('The community spaces I have are for daytime, so we will handle tonight first.');
+  }
+  if (specialistShelterNavigation) {
+    sentences.push('This is help finding the right service, not a confirmed shelter place.');
+  }
+  if (waitingNeeds.length || deferredNeeds.length) {
+    const pending = [...new Set([...waitingNeeds, ...deferredNeeds])];
+    sentences.push(`I'll come back to ${pending.map(humanSupportNeed).join(' and ')} next.`);
+  }
+
+  let awaiting = '';
+  let question = '';
+  if (shelterAudienceNeeded) {
+    awaiting = 'audience';
+    question = 'Are you an adult on your own, an adult with children, or under 18?';
+  } else if (specialistLocationNeeded) {
+    awaiting = 'location';
+    question = 'What suburb or nearest landmark are you near?';
+  } else if (healthLocationNeeded || uncoveredHealthNeeds.length) {
+    awaiting = 'location';
+    const emergencyCheck = ['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : '';
+    question = `${emergencyCheck}What nearby neighbourhood, clinic, or landmark should I use?`;
+  } else if (otherUncoveredNeeds.length) {
+    awaiting = 'location';
+    question = `I have not found local help for ${otherUncoveredNeeds.map(humanSupportNeed).join(' and ')} yet. What nearby area should I try next?`;
+  } else if (supportLocationNeeded) {
+    awaiting = 'location';
+    question = 'Which suburb or nearest landmark are you near?';
+  }
+
+  const suggestedDemoAction = !question && demoEnabled && first
+    ? preferredDemoAction(first, needs, timing)
+    : '';
+  if (!question && suggestedDemoAction) {
+    awaiting = 'demo_action_consent';
+    question = demoActionQuestion(suggestedDemoAction);
+  } else if (!question && first) {
+    awaiting = 'detail_preference';
+    question = first.address_withheld_for_safety || (first.contact_modes.length === 1 && first.contact_modes[0] === 'phone')
+      ? 'Would you like me to repeat the number slowly?'
+      : first.phone
+        ? 'Would you like the phone number or directions first?'
+        : 'Would you like the directions?';
+  }
+  if (question) sentences.push(question);
+
+  return {
+    voiceResponse: sentences.filter(Boolean).join(' '),
+    spokenOptionIds: first ? [first.id] : [],
+    pendingOptionIds: allOptionIds.filter((id) => id !== first?.id),
+    nextNeed: waitingNeeds[0] || deferredNeeds[0] || uncoveredHealthNeeds[0] || otherUncoveredNeeds[0] || '',
+    awaiting,
+    suggestedDemoAction
+  };
 }
 
-function humanAddressRole(value) {
-  if (value === 'health_service_site') return 'health-service address';
-  if (value === 'public_service_office') return 'public-service office';
-  return 'service address';
+function careLead(needs) {
+  const set = new Set(needs);
+  if (set.has('child_safety')) return "I'm glad you told me. Let's get you the right support.";
+  if (['gbv_support', 'sexual_assault_care', 'gbv_healthcare', 'victim_friendly_healthcare', 'abuse_support'].some((need) => set.has(need))) {
+    return "I'm glad you told me. We'll take this carefully.";
+  }
+  if (['mental_health_crisis', 'suicide_support'].some((need) => set.has(need))) {
+    return "I'm glad you told me. You don't have to handle this alone.";
+  }
+  if (['shelter_navigation', 'safe_space_navigation', 'women_children_shelter'].some((need) => set.has(need))) {
+    if (['food', 'hygiene', 'clothing'].some((need) => set.has(need))) {
+      return "Okay, let's sort out tonight first, then your practical needs.";
+    }
+    return "I hear you. Let's focus on somewhere safer first.";
+  }
+  if (['mental_health', 'emotional_support'].some((need) => set.has(need))) {
+    return "I'm glad you told me. You don't have to handle this alone.";
+  }
+  if (['healthcare', 'hospital_care', 'medication'].some((need) => set.has(need))) {
+    return "I'm sorry you're dealing with this. Let's find the right care.";
+  }
+  return "I hear you. Let's take this one step at a time.";
+}
+
+function spokenPurpose(resource, needs) {
+  const categories = new Set([...(resource.primary_categories || []), ...(resource.navigation_categories || [])]);
+  const relevant = needs.filter((need) => categories.has(need) || (need === 'medication' && categories.has('healthcare')));
+  if (relevant.some((need) => ['mental_health', 'emotional_support', 'mental_health_crisis', 'suicide_support'].includes(need))) return 'someone to talk to';
+  if (relevant.some((need) => ['sexual_assault_care', 'gbv_healthcare', 'victim_friendly_healthcare'].includes(need))) return 'specialist care and support';
+  if (relevant.some((need) => ['gbv_support', 'abuse_support'].includes(need))) return 'confidential support';
+  if (relevant.includes('child_safety')) return 'child and family safety support';
+  if (needs.includes('women_children_shelter')) return 'women-and-children support';
+  if (relevant.some((need) => ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter'].includes(need)) && relevant.includes('food')) return 'shelter assessment and food support';
+  if (relevant.some((need) => ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter'].includes(need))) return 'shelter and practical support';
+  if (relevant.some((need) => ['healthcare', 'hospital_care', 'medication'].includes(need))) return 'healthcare';
+  if (relevant.some((need) => ['food', 'hygiene', 'clothing'].includes(need))) return 'food and practical support';
+  if (relevant.includes('substance_use_support')) return 'substance-use support';
+  if (relevant.some((need) => ['employment', 'skills_support'].includes(need))) return 'work and skills support';
+  if (relevant.some((need) => ['grants', 'social_relief', 'financial_support'].includes(need))) return 'grant and social-relief help';
+  if (relevant.some((need) => ['documentation', 'identity_documents'].includes(need))) return 'document help';
+  if (relevant.some((need) => ['legal_support', 'eviction_support'].includes(need))) return 'legal help';
+  return 'the support you asked for';
+}
+
+function preferredDemoAction(resource, needs, timing) {
+  const actions = new Set(resource.demo_actions || []);
+  if (needs.some((need) => ['mental_health', 'emotional_support', 'mental_health_crisis', 'suicide_support'].includes(need)) && actions.has('warm_handoff')) return 'warm_handoff';
+  if (needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter'].includes(need)) && actions.has('intake_request')) return 'intake_request';
+  if (needs.some((need) => ['healthcare', 'hospital_care', 'medication'].includes(need))) {
+    if (timing === 'now' && actions.has('clinician_handoff')) return 'clinician_handoff';
+    if (actions.has('appointment_request')) return 'appointment_request';
+    if (actions.has('clinician_handoff')) return 'clinician_handoff';
+  }
+  if (needs.includes('substance_use_support') && actions.has('assessment_request')) return 'assessment_request';
+  for (const action of ['navigator_handoff', 'availability_check', 'assessment_request', 'appointment_request', 'warm_handoff', 'clinician_handoff']) {
+    if (actions.has(action)) return action;
+  }
+  return '';
+}
+
+function demoActionQuestion(action) {
+  const questions = {
+    appointment_request: 'Would you like me to book the demo appointment now?',
+    clinician_handoff: 'Would you like me to bring up the demo doctor connection now?',
+    availability_check: 'Would you like me to run the demo availability check now?',
+    intake_request: 'Would you like me to start the demo intake check now?',
+    navigator_handoff: 'Would you like me to start the demo redirection now?',
+    warm_handoff: 'Would you like me to start the demo connection now?',
+    assessment_request: 'Would you like me to start the demo assessment now?'
+  };
+  return questions[action] || 'Would you like me to take the next demo step now?';
 }
 
 function humanSupportNeed(value) {

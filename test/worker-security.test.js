@@ -55,13 +55,14 @@ test('combined mode does not expose model-generated provider lookup tools', () =
   assert.match(workerSource, /return \[assessmentTool, emergencyTool, \.\.\.supportTools\]/);
 });
 
-test('Jozi action instructions require every selected route to be spoken', () => {
+test('Jozi action instructions enforce short progressive spoken turns', () => {
   const start = workerSource.indexOf('const JOZI_ACTION_RESPONSE_INSTRUCTIONS');
   const end = workerSource.indexOf('const JOZI_COMBINED_HEALTH_INSTRUCTIONS', start);
   const instructions = workerSource.slice(start, end);
-  assert.match(instructions, /complete tool output voiceResponse/);
-  assert.match(instructions, /speak every route in order/);
-  assert.doesNotMatch(instructions, /one or two short spoken sentences/);
+  assert.match(instructions, /Say only the tool output voiceResponse/);
+  assert.match(instructions, /second route.*left for later/);
+  assert.match(instructions, /warm, unhurried, and conversational/);
+  assert.match(instructions, /Do not preface the action with a limitation/);
 });
 
 test('emergency routing can be called for fire or violence without inventing symptoms', () => {
@@ -79,6 +80,12 @@ test('Jozi mode refuses unsigned OpenAI webhooks', () => {
 });
 
 test('demo coordination is bound to resources offered in the current call', () => {
-  assert.match(workerSource, /jozi_offered_resource_ids/);
+  assert.match(workerSource, /jozi_demo_consent_offer/);
+  assert.match(workerSource, /result\.spoken_option_ids\?\.\[0\]/);
+  assert.match(workerSource, /result\.suggested_demo_action/);
   assert.match(workerSource, /require_offered_resource: true/);
+  assert.match(workerSource, /require_offered_action: true/);
+  assert.match(workerSource, /required_action: consentOffer\.action/);
+  assert.match(workerSource, /if \(result\.success\) this\.setMeta\('jozi_demo_consent_offer', '\{\}'\)/);
+  assert.doesNotMatch(workerSource, /jozi_offered_resource_ids/);
 });

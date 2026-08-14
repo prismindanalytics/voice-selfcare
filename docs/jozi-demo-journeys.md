@@ -7,11 +7,11 @@ These journeys are designed for a knowledgeable Johannesburg homelessness and so
 - Real: the organisations, public telephone numbers, listed service addresses, published service descriptions, and emergency numbers returned by the directory.
 - Source-checked, not live-checked: hours, queues, intake, eligibility, capacity, meals, shelter places, and programme availability.
 - Simulated: every on-screen reference, appointment, availability check, intake request, assessment request, clinician handoff, and warm transfer.
-- Required demo disclosure: “For this demonstration, a simulated request has been prepared. Nothing has been sent, booked, checked, or transferred live.”
+- The line does not lead with a disclaimer. At the moment it completes a demo action, it names the positive demo outcome first and then says plainly that the demonstration is not connected to the external service.
 
 ## Common opening
 
-**Agent:** “Hello, you have reached the Jozi health and support demonstration line. I can show source-checked health and support routes, but I cannot make a live booking or transfer. If anyone is in immediate danger, please tell me now. What would help most today?”
+**Agent:** “Hello, you’ve reached the Jozi health and support demo line. I’m here to help. What would help most right now?”
 
 The line asks only what changes the route: immediate danger or medical red flags, nearest suburb or landmark, adult/child/family, relevant mobility or access needs, and whether it is safe to speak or share an address. It never needs an exact sleeping location.
 
@@ -23,13 +23,13 @@ The line asks only what changes the route: immediate danger or medical red flags
 
 1. Ask one safety question: “Are you in immediate danger, badly hurt, or feeling that you may harm yourself?”
 2. Ask whether the caller is an adult alone, with children, or has a mobility/access need.
-3. For an adult with no immediate danger, return **MES Johannesburg**, 16 Kapteijn Street, Hillbrow, **011 725 6531**.
-4. Say: “MES can explain the current assessment and shelter or safe-space options. Call 011 725 6531 before travelling. I cannot confirm a bed, intake, or meal today.”
-5. Offer to repeat the number slowly. Do not require an app, data, or text.
+3. For an adult with no immediate danger, recommend **MES Johannesburg** as one step that can cover the shelter assessment and food-support request. Give the phone number immediately; keep the address for later or for a caller who asks for it.
+4. Say: “Okay, let’s sort out tonight first, then your practical needs. MES Johannesburg is the best first place to try for shelter assessment and food support. Call 011 725 6531. I can’t confirm a bed, meal, or intake tonight. Would you like me to start the demo intake check now?”
+5. Pause. If the caller agrees, run the demo intake action. Give directions afterward only if useful, one detail at a time. Do not require an app, data, or text.
 
-**Demo coordination:** run an `availability_check` or `intake_request` only after the caller chooses MES.
+**Demo coordination:** run an `intake_request` only after the caller agrees to MES.
 
-**Agent:** “For this demonstration, a simulated MES intake request has been prepared. Nothing was sent to MES, and no bed, meal, or intake is reserved.”
+**Agent:** “All set—the demo now shows the intake check with MES Johannesburg as complete. MES was not contacted, so no real request was sent and no place or meal was reserved.”
 
 ## Journey 2 — “I need someone to talk to”
 
@@ -38,12 +38,12 @@ The line asks only what changes the route: immediate danger or medical red flags
 **Expected flow:**
 
 1. Confirm once that there is no current plan, means, recent self-harm, or inability to stay safe.
-2. Return **SADAG Cipla Mental Health Helpline, 0800 456 789, 24 hours** first, with **LifeLine National Crisis Line, 0861 322 322, 24 hours** as an alternative.
-3. Keep the spoken response short: “Call SADAG on 0800 456 789. They offer mental-health support around the clock. If you become unable to stay safe, tell me immediately so we can use the emergency route.”
+2. Recommend **SADAG Cipla Mental Health Helpline, 0800 456 789, 24 hours** first. Keep **LifeLine National Crisis Line, 0861 322 322** for later if SADAG is declined or unavailable.
+3. Keep the spoken response caring and short: “I’m glad you told me. You don’t have to handle this alone. SADAG can talk with you now on 0800 456 789. Would you like me to start the demo connection?”
 
 **Demo coordination:** a `warm_handoff` may show the future experience.
 
-**Agent:** “For this demonstration, the screen shows a warm handoff to SADAG. No live transfer has occurred.”
+**Agent:** “Stay with me—the demo connection screen for SADAG is ready. No call has been placed and nobody is connected.”
 
 ## Journey 3 — imminent suicide risk
 
@@ -84,11 +84,11 @@ The line asks only what changes the route: immediate danger or medical red flags
 
 **Demo appointment:**
 
-**Agent:** “For this demonstration, a simulated Hillbrow Community Health Centre appointment request for tomorrow at 10 AM has been prepared. Nothing has been sent, booked, or confirmed with the clinic.”
+**Agent:** “All set—the demo now shows your appointment at Hillbrow Community Health Centre booked for tomorrow at 10 AM. The clinic was not contacted, so no real appointment is booked.”
 
 **Demo clinician handoff:**
 
-**Agent:** “For this demonstration, the screen shows that a doctor would join shortly. No live doctor has been contacted or connected.”
+**Agent:** “Please hold—the demo now shows a doctor joining shortly. No live doctor has been contacted or connected.”
 
 ## Journey 6 — GBV on a shared phone
 

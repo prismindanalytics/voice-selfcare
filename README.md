@@ -275,7 +275,8 @@ In Jozi and combined modes:
 - Immediate danger, medical emergencies, imminent self-harm, overdose, violence, and fire use deterministic emergency routes before ordinary lookup.
 - Jozi and combined modes refuse incoming OpenAI webhooks unless `OPENAI_WEBHOOK_SECRET` is configured.
 - The Worker disables caller memory, automatic SMS/WhatsApp, application-level raw transcript retention, and the global last-caller phone fallback. Minimal call records omit the phone and raw messages and expire after `JOZI_TRANSCRIPT_TTL_DAYS`; telephony and model providers still process the live call under their own data controls.
-- `JOZI_DEMO_MODE=true` exposes presentation-only appointment, intake, availability-check, assessment, clinician-handoff, and warm-transfer states. Every result says that nothing was submitted or confirmed live.
+- Spoken turns are progressive: acknowledge the need, recommend one useful next step, ask one question, and pause instead of reading the full resource record.
+- `JOZI_DEMO_MODE=true` exposes presentation-only appointment, intake, availability-check, assessment, clinician-handoff, and redirection states. The line offers these after a caller accepts a recommended service; the completed demo screen is presented positively and immediately clarifies that no external service was contacted or confirmed.
 
 The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`](docs/jozi-demo-journeys.md).
 
@@ -299,7 +300,7 @@ The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`]
 | `FINALIZE_IDLE_MS` | no | `120000` | Idle fallback before final transcript export |
 | `PROVIDER_LOOKUP_TIMEOUT_MS` | no | `2500` | Hard timeout for provider lookup during voice tool calls |
 | `SERVICE_MODE` | no | `health` | `health`, `jozi`, or `combined` prompt and tool profile |
-| `JOZI_DEMO_MODE` | no | `false` | Enables clearly disclosed presentation-only coordination states |
+| `JOZI_DEMO_MODE` | no | `false` | Enables action-time demo booking, intake, assessment, clinician, and redirection screens |
 | `AUTOMATIC_FOLLOWUP_ENABLED` | no | `true` | Master switch for outbound SMS/WhatsApp; Jozi modes force it off |
 | `CALLER_MEMORY_ENABLED` | no | `true` | Enables hashed phone-level memory refresh after calls |
 | `CALLER_MEMORY_TTL_DAYS` | no | - | Optional memory retention TTL in days; blank means no automatic expiry |

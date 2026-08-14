@@ -12,11 +12,10 @@
     "deploy:cloudflare": "wrangler deploy",
     "cf:whoami": "wrangler whoami"
   },
-  "dependencies": {},
   "devDependencies": {
-    "wrangler": "^4.68.0"
+    "wrangler": "^4.123.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   }
 }

@@ -107,10 +107,11 @@ const ACTION_RESPONSE_INSTRUCTIONS = [
 ].join(' ');
 
 const JOZI_ACTION_RESPONSE_INSTRUCTIONS = [
-  'Read the complete tool output voiceResponse aloud, or faithfully translate it, in a calm, respectful tone. If it contains more than one route, speak every route in order.',
+  'Say only the tool output voiceResponse, or faithfully translate it. Do not read the option metadata, internal status, or a second route that the spoken response has deliberately left for later.',
+  'Sound like a caring person on the phone: warm, unhurried, and conversational. Keep the turn to the short sentences in voiceResponse, then pause for the caller.',
   'Use voiceResponse as the complete factual basis without adding any provider name, telephone number, address, hours, availability, or capability.',
-  'Say call before travelling whenever the result says call_before_visit, and never claim a bed, meal, appointment, clinician, transfer, or service is live unless the result explicitly says confirmed true.',
-  'For a demo coordination result, state the simulated outcome, then immediately say that nothing was sent, booked, checked, or transferred live.',
+  'Never claim a real bed, meal, appointment, clinician, transfer, or service is confirmed unless the result explicitly says confirmed true.',
+  'For a demo coordination result, lead positively with the completed demo action. Then say the short built-in sentence explaining that the demo is not connected to the external service. Do not preface the action with a limitation.',
   'For urgent_escalation, give the first emergency number immediately, ask for the nearest landmark, and do not continue ordinary directory search.',
   'Do not add a long recap.'
 ].join(' ');
@@ -124,7 +125,7 @@ const JOZI_COMBINED_HEALTH_INSTRUCTIONS = `
 - For any emergency, call handle_emergency immediately.
 - For a Johannesburg clinic, hospital, mental-health service, medicine route, test route, or other destination, call find_support_services. Never name a destination from memory.
 - The old unverified provider, booking, referral, refill, commodity, and testing tools are not available in this mode. Do not ask to call them.
-- A presentation-only clinic request or doctor-handoff screen can be shown only through coordinate_support_demo after the caller selects a resource returned in this call. It is never submitted or live.
+- After the caller accepts a recommended clinic or service, use coordinate_support_demo to show the booking, intake check, or caring redirection. Do not lead with what the line cannot do. The tool response will make clear, at the action moment, that the result is a demo and is not connected to the external service.
 `.trim();
 
 export class CallerRegistry extends DurableObject {
@@ -570,19 +571,38 @@ export class CallSession extends DurableObject {
           break;
 
         case 'find_support_services':
-          result = resolveJoziSupport(args);
-          this.setMeta('jozi_offered_resource_ids', JSON.stringify((result.options || []).map((option) => option.id).filter(Boolean)));
+          result = resolveJoziSupport({
+            ...args,
+            demo_enabled: joziDemoEnabled(this.env)
+          });
+          {
+            const consentResourceId = result.awaiting === 'demo_action_consent'
+              ? result.spoken_option_ids?.[0] || ''
+              : '';
+            const consentAction = consentResourceId ? result.suggested_demo_action || '' : '';
+            this.setMeta('jozi_demo_consent_offer', JSON.stringify(
+              consentResourceId && consentAction
+                ? { resource_id: consentResourceId, action: consentAction }
+                : {}
+            ));
+          }
           this.addMessage('system', `Jozi support options resolved: ${JSON.stringify(result)}`);
           break;
 
         case 'coordinate_support_demo':
-          result = coordinateJoziSupport({
-            ...args,
-            demo_enabled: joziDemoEnabled(this.env),
-            require_offered_resource: true,
-            offered_resource_ids: this.getMetaJson('jozi_offered_resource_ids') || [],
-            reference_id: generateId('JZDEMO')
-          });
+          {
+            const consentOffer = this.getMetaJson('jozi_demo_consent_offer') || {};
+            result = coordinateJoziSupport({
+              ...args,
+              demo_enabled: joziDemoEnabled(this.env),
+              require_offered_resource: true,
+              offered_resource_ids: consentOffer.resource_id ? [consentOffer.resource_id] : [],
+              require_offered_action: true,
+              required_action: consentOffer.action || '',
+              reference_id: generateId('JZDEMO')
+            });
+            if (result.success) this.setMeta('jozi_demo_consent_offer', '{}');
+          }
           this.addMessage('system', `Jozi demo coordination: ${JSON.stringify(result)}`);
           break;
 
@@ -2680,6 +2700,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
             enum: ['none', 'medical_emergency', 'self_harm_imminent', 'suicide_imminent', 'overdose', 'violence_now', 'gbv_immediate', 'fire_emergency', 'immediate_danger']
           },
           timing: { type: 'string', enum: ['now', 'today', 'tonight', 'routine'] },
+          safe_to_speak: { type: 'string', enum: ['yes', 'no', 'unknown'] },
           phone_type: { type: 'string', enum: ['mobile', 'landline', 'unknown'] },
           max_options: { type: 'integer', minimum: 1, maximum: 2 }
         },
@@ -2689,7 +2710,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
     ...(demoEnabled ? [{
       type: 'function',
       name: 'coordinate_support_demo',
-      description: 'Create a presentation-only simulated appointment, clinician handoff, availability check, intake request, assessment request, or navigator handoff after the caller selects a resource returned by find_support_services. Nothing is sent to a real provider and nothing is live-confirmed.',
+      description: 'Complete the selected demo appointment, clinician handoff, availability check, intake request, assessment request, or caring redirection after the caller accepts a resource returned by find_support_services. Present the completed demo action positively; the tool response includes the required brief clarification that no external service was contacted.',
       parameters: {
         type: 'object',
         properties: {
