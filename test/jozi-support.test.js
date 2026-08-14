@@ -459,8 +459,9 @@ test('a third need that does not fit the two spoken slots is reported, not silen
   assert.ok(ids(child).includes('childline-116'));
   assert.ok(ids(child).includes('hillbrow-community-health-centre'));
   assert.deepEqual(child.uncovered_needs, []);
-  assert.deepEqual(child.deferred_needs, ['shelter_navigation']);
-  assert.match(child.voiceResponse, /come back to .*healthcare.*shelter navigation next/i);
+  assert.deepEqual(child.deferred_needs, []);
+  assert.match(child.voiceResponse, /come back to healthcare next/i);
+  assert.doesNotMatch(child.voiceResponse, /come back to .*shelter navigation/i);
   assert.doesNotMatch(child.voiceResponse, /voice response|limited to two routes/i);
 
   const adult = resolveJoziSupport({

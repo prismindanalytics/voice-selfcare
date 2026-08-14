@@ -2,14 +2,17 @@ import { DurableObject } from 'cloudflare:workers';
 import {
   JOZI_SUPPORT_CATEGORIES,
   JOZI_SUPPORT_INSTRUCTIONS,
+  applyJoziCityFallbackDecision,
   buildJoziPendingLookupContext,
   buildServiceGreeting,
   coordinateJoziSupport,
+  isImmediateJoziConsentTurn,
   mergeJoziSupportContext,
   modeIncludesJozi,
   normalizeServiceMode,
   resolveJoziSupport,
-  serviceModePolicy
+  serviceModePolicy,
+  stripUntrustedJoziInternalArgs
 } from './jozi-support.js';
 import {
   extractTwilioCallSidFromSipHeaders,
@@ -568,7 +571,6 @@ export class CallSession extends DurableObject {
     if (message.type === 'conversation.item.input_audio_transcription.completed' && message.transcript) {
       this.addMessageOnce('patient', message.transcript);
       this.setMeta('last_patient_text', message.transcript);
-      this.setMeta('patient_turn_seq', String(Number(this.getMeta('patient_turn_seq') || 0) + 1));
       this.clearInputTranscriptDelta(message.item_id);
       return;
     }
@@ -585,6 +587,18 @@ export class CallSession extends DurableObject {
     }
 
     if (message.type === 'conversation.item.created') {
+      const patientItemId = message.item?.role === 'user'
+        ? String(message.item?.id || message.item_id || '').trim()
+        : '';
+      if (patientItemId) {
+        const seenPatientItems = this.getMetaJson('patient_turn_item_ids');
+        const seen = Array.isArray(seenPatientItems) ? seenPatientItems.map(String) : [];
+        if (!seen.includes(patientItemId)) {
+          this.setMeta('patient_turn_item_ids', JSON.stringify([...seen, patientItemId].slice(-24)));
+          this.setMeta('patient_turn_seq', String(Number(this.getMeta('patient_turn_seq') || 0) + 1));
+        }
+        this.setMeta('last_patient_item_id', patientItemId);
+      }
       this.captureItemContent(message.item);
       return;
     }
@@ -638,20 +652,50 @@ export class CallSession extends DurableObject {
           {
             const pendingContext = this.getMetaJson('jozi_pending_lookup_context') || {};
             const cityFallbackOffer = this.getMetaJson('jozi_city_fallback_offer') || {};
-            const callerAnsweredCityOffer = Number(this.getMeta('patient_turn_seq') || 0) >
-              Number(cityFallbackOffer.patient_turn_seq ?? Number.POSITIVE_INFINITY);
-            const contextualArgs = mergeJoziSupportContext(pendingContext, args);
-            const acceptedCityFallback = args.city_fallback_consent_confirmed === true &&
-              cityFallbackOffer.active === true &&
-              callerAnsweredCityOffer;
-            contextualArgs.allow_city_fallback = acceptedCityFallback;
-            if (acceptedCityFallback && cityFallbackOffer.fallback_need) {
-              contextualArgs.needs = [cityFallbackOffer.fallback_need];
-            }
-            result = resolveJoziSupport({
-              ...contextualArgs,
-              demo_enabled: joziDemoEnabled(this.env)
+            const currentPatientTurnSeq = Number(this.getMeta('patient_turn_seq') || 0);
+            const currentPatientItemId = this.getMeta('last_patient_item_id') || '';
+            const callerAnsweredCityOffer = isImmediateJoziConsentTurn({
+              currentItemId: currentPatientItemId,
+              currentTurnSeq: currentPatientTurnSeq,
+              offer: cityFallbackOffer
             });
+            const callerArgs = stripUntrustedJoziInternalArgs(args);
+            const mergedContext = mergeJoziSupportContext(pendingContext, callerArgs);
+            const cityDecision = applyJoziCityFallbackDecision({
+              contextualArgs: mergedContext,
+              offer: cityFallbackOffer,
+              consentProvided: Object.prototype.hasOwnProperty.call(callerArgs, 'city_fallback_consent_confirmed'),
+              consentConfirmed: callerArgs.city_fallback_consent_confirmed,
+              callerAnswered: callerAnsweredCityOffer
+            });
+            const contextualArgs = cityDecision.contextualArgs;
+            const acceptedCityFallback = cityDecision.accepted;
+            const declinedCityFallback = cityDecision.declined;
+            const fallbackNeed = cityDecision.fallbackNeed;
+            const remainingNeeds = cityDecision.remainingNeeds;
+            result = declinedCityFallback && remainingNeeds.length === 0
+              ? {
+                  success: false,
+                  status: 'city_fallback_declined',
+                  error: 'city_last_resort_declined',
+                  needs: fallbackNeed ? [fallbackNeed] : [],
+                  location: contextualArgs.location || '',
+                  audience: contextualArgs.audience || 'unknown',
+                  timing: contextualArgs.timing || 'routine',
+                  options: [],
+                  spoken_option_ids: [],
+                  pending_option_ids: [],
+                  handled_needs: [],
+                  next_need: '',
+                  awaiting: 'end_or_continue',
+                  suggested_demo_action: '',
+                  availability_confirmed: false,
+                  voiceResponse: "Okay, I won't use the City route. I do not have another verified match for that need in this area. Would you like to try another nearby area or a different kind of support?"
+                }
+              : resolveJoziSupport({
+                  ...contextualArgs,
+                  demo_enabled: joziDemoEnabled(this.env)
+                });
             this.setMeta('jozi_pending_lookup_context', JSON.stringify(
               buildJoziPendingLookupContext(contextualArgs, result)
             ));
@@ -660,7 +704,11 @@ export class CallSession extends DurableObject {
                 ? {
                     active: true,
                     fallback_need: result.city_fallback_need || '',
-                    patient_turn_seq: Number(this.getMeta('patient_turn_seq') || 0)
+                    remaining_needs: Array.isArray(result.needs)
+                      ? result.needs.filter((need) => need !== result.city_fallback_need)
+                      : [],
+                    patient_turn_seq: Number(this.getMeta('patient_turn_seq') || 0),
+                    patient_item_id: this.getMeta('last_patient_item_id') || ''
                   }
                 : {}
             ));
@@ -675,7 +723,8 @@ export class CallSession extends DurableObject {
                 ? {
                     resource_id: consentResourceId,
                     action: consentAction,
-                    patient_turn_seq: Number(this.getMeta('patient_turn_seq') || 0)
+                    patient_turn_seq: Number(this.getMeta('patient_turn_seq') || 0),
+                    patient_item_id: this.getMeta('last_patient_item_id') || ''
                   }
                 : {}
             ));
@@ -686,8 +735,13 @@ export class CallSession extends DurableObject {
         case 'coordinate_support_demo':
           {
             const consentOffer = this.getMetaJson('jozi_demo_consent_offer') || {};
-            const callerAnsweredAfterOffer = Number(this.getMeta('patient_turn_seq') || 0) >
-              Number(consentOffer.patient_turn_seq ?? Number.POSITIVE_INFINITY);
+            const currentPatientTurnSeq = Number(this.getMeta('patient_turn_seq') || 0);
+            const currentPatientItemId = this.getMeta('last_patient_item_id') || '';
+            const callerAnsweredAfterOffer = isImmediateJoziConsentTurn({
+              currentItemId: currentPatientItemId,
+              currentTurnSeq: currentPatientTurnSeq,
+              offer: consentOffer
+            });
             result = coordinateJoziSupport({
               ...args,
               demo_enabled: joziDemoEnabled(this.env),
@@ -2880,7 +2934,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
           detail_requested: { type: 'string', enum: ['recommendation', 'phone', 'hours', 'address', 'directions'], description: 'Use the caller\'s current request so the verified response can give an exact phone number, hours, address, or directions without relying on model memory.' },
           safe_to_speak: { type: 'string', enum: ['yes', 'no', 'unknown'] },
           phone_type: { type: 'string', enum: ['mobile', 'landline', 'unknown'] },
-          city_fallback_consent_confirmed: { type: 'boolean', description: 'True only after the immediately preceding support result offered the City as the last option and the caller clearly said yes. Preserve the caller\'s earlier need and location. Never set this on the first lookup.' },
+          city_fallback_consent_confirmed: { type: 'boolean', description: 'Set true only when the caller clearly accepts the immediately preceding City-last-resort offer; set false when they clearly decline it so the line can continue to any remaining non-City need. Preserve the caller\'s earlier needs and location. Never set this on the first lookup.' },
           max_options: { type: 'integer', minimum: 1, maximum: 2 }
         },
         required: ['needs', 'safety_context']

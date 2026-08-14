@@ -109,15 +109,18 @@ test('City last-option routing requires a later explicit caller turn', () => {
   const lookupEnd = workerSource.indexOf("case 'coordinate_support_demo':", lookupStart);
   const lookupCase = workerSource.slice(lookupStart, lookupEnd);
   assert.match(lookupCase, /jozi_city_fallback_offer/);
+  assert.match(lookupCase, /stripUntrustedJoziInternalArgs\(args\)/);
   assert.match(lookupCase, /city_fallback_consent_confirmed/);
   assert.match(lookupCase, /patient_turn_seq/);
   assert.match(lookupCase, /callerAnsweredCityOffer/);
   assert.match(lookupCase, /acceptedCityFallback/);
+  assert.match(lookupCase, /declinedCityFallback/);
   assert.match(lookupCase, /fallback_need/);
   assert.match(lookupCase, /fallback_need: result\.city_fallback_need \|\| ''/);
   assert.doesNotMatch(lookupCase, /fallback_need: result\.next_need/);
-  assert.match(lookupCase, /contextualArgs\.needs = \[cityFallbackOffer\.fallback_need\]/);
-  assert.match(lookupCase, /allow_city_fallback/);
+  assert.match(lookupCase, /applyJoziCityFallbackDecision/);
+  assert.match(lookupCase, /isImmediateJoziConsentTurn/);
+  assert.match(lookupCase, /cityDecision\.contextualArgs/);
 
   const toolStart = workerSource.indexOf("name: 'find_support_services'");
   const toolEnd = workerSource.indexOf("name: 'coordinate_support_demo'", toolStart);
@@ -128,6 +131,21 @@ test('City last-option routing requires a later explicit caller turn', () => {
   const emergencyStart = workerSource.indexOf("case 'handle_emergency':");
   const emergencyEnd = workerSource.indexOf('default:', emergencyStart);
   assert.match(workerSource.slice(emergencyStart, emergencyEnd), /setMeta\('jozi_city_fallback_offer', '\{\}'\)/);
+});
+
+test('caller-turn consent is keyed to deduplicated user item ids, not transcript completion order', () => {
+  const itemStart = workerSource.indexOf("if (message.type === 'conversation.item.created')");
+  const itemEnd = workerSource.indexOf("if (message.type === 'error')", itemStart);
+  const itemHandler = workerSource.slice(itemStart, itemEnd);
+  assert.match(itemHandler, /message\.item\?\.role === 'user'/);
+  assert.match(itemHandler, /patient_turn_item_ids/);
+  assert.match(itemHandler, /!seen\.includes\(patientItemId\)/);
+  assert.match(itemHandler, /setMeta\('last_patient_item_id', patientItemId\)/);
+  assert.match(itemHandler, /setMeta\('patient_turn_seq'/);
+
+  const transcriptStart = workerSource.indexOf("if (message.type === 'conversation.item.input_audio_transcription.completed'");
+  const transcriptEnd = workerSource.indexOf("if (message.type === 'response.content_part.done')", transcriptStart);
+  assert.doesNotMatch(workerSource.slice(transcriptStart, transcriptEnd), /patient_turn_seq/);
 });
 
 test('emergency routing can be called for fire or violence without inventing symptoms', () => {

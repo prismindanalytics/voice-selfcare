@@ -1460,6 +1460,15 @@ const URGENT_NEED_CONTEXT = {
   fire_emergency: 'fire_emergency'
 };
 
+const PRIVACY_SENSITIVE_NEEDS = new Set([
+  'gbv_support',
+  'gbv_healthcare',
+  'sexual_assault_care',
+  'victim_friendly_healthcare',
+  'abuse_support',
+  'women_children_shelter'
+]);
+
 export const JOZI_SUPPORT_INSTRUCTIONS = `
 You are the Jozi My Jozi support line: a calm, caring, voice-first doorway to verified Johannesburg health and community support.
 
@@ -1606,6 +1615,9 @@ export function validateJoziResources(resources = JOZI_SUPPORT_RESOURCES, now = 
 
 export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES) {
   let needs = normalizeNeeds(args);
+  const completedNeeds = new Set(normalizeNeedValues(args.completed_needs || []));
+  const carriedContinuationNeeds = normalizeNeedValues(args.continuation_needs)
+    .filter((need) => !needs.includes(need));
   const rawSafeSiteRequest = hasAmbiguousSafeSiteRequest(args);
   const demoEnabled = args.demo_enabled === true;
   const locationInput = selectCallerStatedLocation(args);
@@ -1629,7 +1641,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       interpretedNeed
     ])];
   }
-  const allowCityFallback = args.allow_city_fallback === true || args.allowCityFallback === true;
+  const allowCityFallback = args.allow_city_fallback === true;
+  const suppressCityFallback = args.suppress_city_fallback === true;
   const coordinationPreference = normalizeCoordinationPreference(args.coordination_preference || args.coordinationPreference);
   const detailRequested = normalizeDetailRequested(args.detail_requested || args.detailRequested);
   const requestedMesProgrammeId = mesProgrammeResourceId(args.mes_programme || args.mesProgramme);
@@ -1651,14 +1664,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
   }
 
   const safeToSpeak = normalizeSafeToSpeak(args.safe_to_speak || args.safeToSpeak);
-  const privacySensitiveNeed = needs.some((need) => [
-    'gbv_support',
-    'gbv_healthcare',
-    'sexual_assault_care',
-    'victim_friendly_healthcare',
-    'abuse_support',
-    'women_children_shelter'
-  ].includes(need));
+  const privacySensitiveNeed = needs.some((need) => PRIVACY_SENSITIVE_NEEDS.has(need));
   if (privacySensitiveNeed && safeToSpeak !== 'yes') {
     const callerSaidNo = safeToSpeak === 'no';
     return {
@@ -1756,11 +1762,11 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     };
   }
 
-  if (audience === 'child' && needs.some((need) => ['shelter_navigation', 'safe_space_navigation'].includes(need))) {
+  if (!completedNeeds.has('child_safety') && audience === 'child' && needs.some((need) => ['shelter_navigation', 'safe_space_navigation'].includes(need))) {
     needs = [...new Set(['child_safety', ...needs])];
   }
 
-  if (audience === 'child' && needs.some((need) => [
+  if (!completedNeeds.has('child_safety') && audience === 'child' && needs.some((need) => [
     'mental_health',
     'emotional_support',
     'mental_health_crisis',
@@ -1883,7 +1889,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
   const unmatchedShelterAudienceNeeded = audience === 'unknown' && uncoveredCityFallbackNeeds.some((need) =>
     ['shelter_navigation', 'safe_space_navigation'].includes(need)
   );
-  const cityFallbackAvailable = !allowCityFallback && contactMode !== 'online' && usefulLocation &&
+  const cityFallbackAvailable = !suppressCityFallback && !allowCityFallback && contactMode !== 'online' && usefulLocation &&
     uncoveredCityFallbackNeeds.length > 0 && !unmatchedShelterAudienceNeeded;
   if (cityFallbackAvailable && (
     matched.length === 0 || highestUncoveredCityPriority > needPriority(highestMatchedPriority)
@@ -1916,6 +1922,15 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         needs,
         locationInput,
         'I can find a real daytime community place. Which neighbourhood or nearest landmark are you near?',
+        'location'
+      );
+    }
+    if (usefulLocation && needs.includes('daytime_community_space')) {
+      return noMatch(
+        'verified_daytime_space_not_found_in_area',
+        needs,
+        locationInput,
+        `I have your area, but I do not have a verified daytime community place there. Is there another nearby suburb or landmark you would like me to try?`,
         'location'
       );
     }
@@ -1967,7 +1982,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     const fallbackOption = allowCityFallback && contactMode !== 'online' && fallback && needs.some((need) => CITY_LAST_RESORT_NEEDS.has(need))
       ? [publicResource(fallback)]
       : [];
-    const cityFallbackAvailableWithoutMatch = !allowCityFallback && contactMode !== 'online' && usefulLocation &&
+    const cityFallbackAvailableWithoutMatch = !suppressCityFallback && !allowCityFallback && contactMode !== 'online' && usefulLocation &&
       needs.some((need) => CITY_LAST_RESORT_NEEDS.has(need));
     if (cityFallbackAvailableWithoutMatch) {
       return cityFallbackConsentResult(
@@ -1977,7 +1992,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         needs.find((need) => CITY_LAST_RESORT_NEEDS.has(need)) || ''
       );
     }
-    const unknownNeedAwaiting = usefulLocation ? 'support_need' : 'location';
+    const knownCanonicalNeed = needs.some((need) => JOZI_SUPPORT_CATEGORIES.includes(need));
+    const unknownNeedAwaiting = usefulLocation && knownCanonicalNeed ? 'location' : usefulLocation ? 'support_need' : 'location';
     return {
       success: false,
       status: 'no_verified_local_match',
@@ -1996,8 +2012,10 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
         ? `I have not found a suitable local place yet. You can call ${fallbackOption[0].name} on ${fallbackOption[0].phone} for help finding the right service. ${demoEnabled ? 'Would you like me to connect you now in the demo?' : 'Would you like me to repeat the number?'}`
         : contactMode === 'online'
           ? 'I have not found a verified online option for that need. Would you like a phone or in-person route instead?'
-          : usefulLocation
-            ? 'I have your area. Could you tell me whether you need safety, food, health support, or something else?'
+          : usefulLocation && knownCanonicalNeed
+            ? `I understand you need ${needs.map(humanSupportNeed).join(' and ')}, but I do not have a verified match in that area. Is there another nearby suburb or landmark you would like me to try?`
+            : usefulLocation
+              ? 'I have your area. Could you tell me whether you need safety, food, health support, or something else?'
             : 'I have not found a suitable local option yet. What nearby area or another kind of help should I try?'
     };
   }
@@ -2027,8 +2045,10 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
   const phoneAlternativeIncluded = contactMode === 'in_person' && selected.some((option) =>
     option.contact_modes.length === 1 && option.contact_modes[0] === 'phone'
   );
+  const reportedNeeds = [...new Set([...needs, ...carriedContinuationNeeds])];
+  const reportedDeferredNeeds = [...new Set([...deferredNeeds, ...carriedContinuationNeeds])];
   const conversation = buildConversationalSupportResponse({
-    needs,
+    needs: reportedNeeds,
     selected,
     selectedCandidates,
     contactMode,
@@ -2042,7 +2062,8 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     uncoveredHealthNeeds,
     otherUncoveredNeeds,
     cityFallbackAvailable: false,
-    deferredNeeds,
+    deferredNeeds: reportedDeferredNeeds,
+    forcedContinuationNeeds: carriedContinuationNeeds,
     daytimeSpaceUnavailableTonight,
     coordinationPreference,
     detailRequested
@@ -2050,7 +2071,9 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
   const onlyPhoneAlternatives = contactMode === 'in_person' && selected.length > 0 && selected.every((option) =>
     option.contact_modes.length === 1 && option.contact_modes[0] === 'phone'
   );
-  const partialMatch = uncoveredNeeds.length > 0 || deferredNeeds.length > 0;
+  const handledNeeds = conversation.handledNeeds || [];
+  const effectiveDeferredNeeds = reportedDeferredNeeds.filter((need) => !handledNeeds.includes(need));
+  const partialMatch = uncoveredNeeds.length > 0 || effectiveDeferredNeeds.length > 0;
   const exposedOptions = conversation.spokenOptionIds.length ? selected : [];
   return {
     success: !partialMatch && !onlyPhoneAlternatives && !shelterAudienceNeeded && !specialistShelterNavigation,
@@ -2067,7 +2090,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
               : 'source_checked_public_contact_found',
     error: uncoveredNeeds.length > 0
       ? 'some_requested_support_not_found'
-      : deferredNeeds.length > 0
+      : effectiveDeferredNeeds.length > 0
         ? 'some_requested_support_deferred'
       : shelterAudienceNeeded
         ? 'shelter_audience_required'
@@ -2077,14 +2100,15 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
             ? 'verified_in_person_support_not_found'
             : undefined,
     directory: 'jozi_curated_public_sources',
-    needs,
+    needs: reportedNeeds,
     location: locationInput,
     audience,
     timing,
     needsMoreLocation,
     needsMoreAudience: shelterAudienceNeeded,
     uncovered_needs: uncoveredNeeds,
-    deferred_needs: deferredNeeds,
+    deferred_needs: effectiveDeferredNeeds,
+    handled_needs: handledNeeds,
     options: exposedOptions,
     selected: exposedOptions[0],
     source_checked_at: exposedOptions[0]?.source_checked_at || '',
@@ -2246,6 +2270,10 @@ function buildUrgentEscalation({ safetyContext, location, audience, resources, p
 
 function normalizeNeeds(args) {
   const raw = args.needs || args.categories || args.service_types || [args.service_type || args.category || args.need_type];
+  return normalizeNeedValues(raw);
+}
+
+function normalizeNeedValues(raw) {
   const values = Array.isArray(raw) ? raw : String(raw || '').split(',');
   return [...new Set(values.flatMap(expandSupportCategory).filter(Boolean))];
 }
@@ -2256,6 +2284,8 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   const previousLocation = selectCallerStatedLocation(previous);
   const currentLocationIsUseful = isUsefulJoziLocation(currentLocation);
   const previousLocationIsUseful = isUsefulJoziLocation(previousLocation);
+  const usefulLocationChanged = currentLocationIsUseful && previousLocationIsUseful &&
+    normalizeJoziLocation(currentLocation) !== normalizeJoziLocation(previousLocation);
 
   if (!currentLocationIsUseful && previousLocationIsUseful) {
     merged.location = previous.location || previousLocation;
@@ -2265,6 +2295,8 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
 
   const currentAudience = normalizeAudience(current.audience || current.caller_type);
   const previousAudience = normalizeAudience(previous.audience || previous.caller_type);
+  const knownAudienceChanged = Boolean(current.audience || current.caller_type) &&
+    currentAudience !== 'unknown' && currentAudience !== previousAudience;
   if (currentAudience === 'unknown' && previousAudience !== 'unknown') merged.audience = previousAudience;
 
   const currentSafeToSpeak = normalizeSafeToSpeak(current.safe_to_speak || current.safeToSpeak);
@@ -2281,10 +2313,16 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   const previousNeedValues = Array.isArray(previous.needs) ? previous.needs : [];
   const normalizedCurrentNeeds = currentNeedValues.flatMap(expandSupportCategory);
   const normalizedPreviousNeeds = previousNeedValues.flatMap(expandSupportCategory);
-  const continuationNeed = normalizeSupportCategory(previous.continuation_need || '');
+  const continuationNeeds = normalizeNeedValues(
+    Array.isArray(previous.continuation_needs) && previous.continuation_needs.length
+      ? previous.continuation_needs
+      : [previous.continuation_need || '']
+  );
+  const currentRouteNeeds = normalizeNeedValues(previous.current_route_needs || []);
   const priorTurnNeeds = Array.isArray(previous.prior_needs)
     ? previous.prior_needs.flatMap(expandSupportCategory)
     : normalizedPreviousNeeds;
+  const previousCompletedNeeds = normalizeNeedValues(previous.completed_needs || []);
   const currentDetailRequest = normalizeDetailRequested(current.detail_requested || current.detailRequested);
   const currentCoordinationPreference = normalizeCoordinationPreference(
     current.coordination_preference || current.coordinationPreference
@@ -2292,8 +2330,25 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   const callerIsAskingForCurrentRouteDetail =
     ['phone', 'hours', 'address', 'directions'].includes(currentDetailRequest) ||
     ['appointment_request', 'clinician_handoff'].includes(currentCoordinationPreference);
-  const continueSinglePendingNeed = Boolean(continuationNeed) && !callerIsAskingForCurrentRouteDetail && (
-    currentNeedValues.length === 0 || normalizedCurrentNeeds.includes(continuationNeed)
+  const hasNewPriorityNeed = normalizedCurrentNeeds.some((need) =>
+    (Boolean(URGENT_NEED_CONTEXT[need]) || needPriority(need) >= 90) &&
+    !currentRouteNeeds.includes(need) &&
+    !priorTurnNeeds.includes(need)
+  );
+  const effectiveSafeToSpeak = normalizeSafeToSpeak(merged.safe_to_speak || merged.safeToSpeak);
+  const newlyStatedSensitiveNeed = normalizedCurrentNeeds.some((need) =>
+    PRIVACY_SENSITIVE_NEEDS.has(need) && !priorTurnNeeds.includes(need)
+  );
+  const queuedSensitiveNeed = continuationNeeds.some((need) => PRIVACY_SENSITIVE_NEEDS.has(need));
+  const privacyNeedsMustPreempt =
+    (newlyStatedSensitiveNeed && effectiveSafeToSpeak !== 'yes') ||
+    (queuedSensitiveNeed && currentSafeToSpeak === 'no');
+  const detailTargetsCurrentRoute = callerIsAskingForCurrentRouteDetail && (
+    currentNeedValues.length === 0 ||
+    normalizedCurrentNeeds.some((need) => currentRouteNeeds.includes(need))
+  ) && !hasNewPriorityNeed;
+  const continuePendingNeeds = continuationNeeds.length > 0 && !callerIsAskingForCurrentRouteDetail && (
+    currentNeedValues.length === 0 || normalizedCurrentNeeds.some((need) => continuationNeeds.includes(need))
   );
   const newContinuationNeeds = normalizedCurrentNeeds.filter((need) => !priorTurnNeeds.includes(need));
   const hasRawAmbiguousSafeNeed = currentNeedValues.some((need) =>
@@ -2305,6 +2360,7 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   const currentTimingRaw = String(current.timing || current.needed_when || current.urgency || '').trim();
   const previousTiming = normalizeTiming(previous.timing || previous.needed_when || previous.urgency);
   const currentTiming = normalizeTiming(currentTimingRaw);
+  const explicitTimingChanged = Boolean(currentTimingRaw) && currentTiming !== 'routine' && currentTiming !== previousTiming;
   if (continuesPendingNeed && previous.timing && (!currentTimingRaw || (currentTiming === 'routine' && previousTiming !== 'routine'))) {
     merged.timing = previousTiming;
   }
@@ -2313,15 +2369,70 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   }
   const currentSafeSiteType = current.safe_site_type || current.safeSiteType;
   const previousSafeSiteType = previous.safe_site_type || previous.safeSiteType;
+  const normalizedCurrentSafeSiteType = normalizeSafeSiteType(currentSafeSiteType);
+  const normalizedPreviousSafeSiteType = normalizeSafeSiteType(previousSafeSiteType);
+  const explicitSafeSiteTypeChanged = Boolean(normalizedCurrentSafeSiteType) &&
+    normalizedCurrentSafeSiteType !== normalizedPreviousSafeSiteType;
   if (!currentSafeSiteType && previousSafeSiteType && (currentNeedValues.length === 0 || hasRawAmbiguousSafeNeed)) {
     merged.safe_site_type = previousSafeSiteType;
   }
-  if (continueSinglePendingNeed) {
-    merged.needs = [...new Set([continuationNeed, ...newContinuationNeeds])];
+  if (privacyNeedsMustPreempt) {
+    merged.needs = [...new Set([...normalizedCurrentNeeds, ...continuationNeeds, ...currentRouteNeeds])];
+    merged.prior_needs = [...new Set([...priorTurnNeeds, ...normalizedCurrentNeeds])];
+    merged.completed_needs = normalizeNeedValues(previous.completed_needs || []);
+    if (previous.suppress_city_fallback === true) merged.suppress_city_fallback = true;
+  } else if (continuePendingNeeds) {
+    merged.needs = [...new Set([...continuationNeeds, ...newContinuationNeeds])];
+    merged.prior_needs = [...new Set([...priorTurnNeeds, ...normalizedCurrentNeeds])];
+    merged.completed_needs = normalizeNeedValues(previous.completed_needs || []);
+    if (previous.suppress_city_fallback === true) merged.suppress_city_fallback = true;
+  } else if (currentRouteNeeds.length && detailTargetsCurrentRoute) {
+    merged.needs = currentRouteNeeds;
+    const queuedDetailNeeds = [...new Set([...continuationNeeds, ...newContinuationNeeds])];
+    if (queuedDetailNeeds.length) merged.continuation_needs = queuedDetailNeeds;
+    merged.prior_needs = [...new Set([...priorTurnNeeds, ...normalizedCurrentNeeds])];
+    merged.completed_needs = normalizeNeedValues(previous.completed_needs || []);
+    if (previous.suppress_city_fallback === true) merged.suppress_city_fallback = true;
+    if (previous.current_route_city_fallback_need && currentRouteNeeds.includes(previous.current_route_city_fallback_need)) {
+      merged.allow_city_fallback = true;
+      merged.current_route_city_fallback_need = previous.current_route_city_fallback_need;
+    }
   } else if (hasRawAmbiguousSafeNeed && previousNeedValues.length) {
     merged.needs = [...new Set([...previousNeedValues, ...currentNeedValues])];
   } else if (currentNeedValues.length === 0 && previousNeedValues.length) {
     merged.needs = previous.needs;
+  }
+  const continuesStoredClarification = Boolean(previous.pending_awaiting) && (
+    currentNeedValues.length === 0 ||
+    hasRawAmbiguousSafeNeed ||
+    normalizedCurrentNeeds.some((need) => priorTurnNeeds.includes(need))
+  );
+  if (continuesStoredClarification) {
+    merged.prior_needs = [...new Set([...priorTurnNeeds, ...normalizedCurrentNeeds])];
+    merged.completed_needs = previousCompletedNeeds;
+    if (previous.suppress_city_fallback === true) merged.suppress_city_fallback = true;
+    const contextCorrectionWithoutNeeds = currentNeedValues.length === 0 && (
+      usefulLocationChanged || knownAudienceChanged || explicitTimingChanged || explicitSafeSiteTypeChanged
+    );
+    const explicitCurrentRouteRetry = !continuationNeeds.length && currentRouteNeeds.length > 0 && (
+      normalizedCurrentNeeds.some((need) => currentRouteNeeds.includes(need)) ||
+      contextCorrectionWithoutNeeds
+    );
+    if (explicitCurrentRouteRetry && !detailTargetsCurrentRoute) {
+      const retryNeeds = normalizedCurrentNeeds.length ? normalizedCurrentNeeds : currentRouteNeeds;
+      merged.needs = retryNeeds;
+      merged.completed_needs = previousCompletedNeeds.filter((need) => !retryNeeds.includes(need));
+      if (explicitTimingChanged && currentTiming === 'tonight' && retryNeeds.includes('daytime_community_space')) {
+        merged.safe_site_type = 'tonight';
+      }
+      if (contextCorrectionWithoutNeeds) {
+        merged.prior_needs = retryNeeds;
+      }
+    } else if (!continuationNeeds.length && !detailTargetsCurrentRoute) {
+      const unhandledCurrentNeeds = normalizedCurrentNeeds.filter((need) => !previousCompletedNeeds.includes(need));
+      const storedUnresolvedNeeds = normalizedPreviousNeeds.filter((need) => !previousCompletedNeeds.includes(need));
+      merged.needs = [...new Set([...storedUnresolvedNeeds, ...unhandledCurrentNeeds])];
+    }
   }
   return merged;
 }
@@ -2338,8 +2449,33 @@ export function buildJoziPendingLookupContext(args = {}, result = {}) {
   ]);
   const progressiveContinuation = Boolean(result.next_need) &&
     ['demo_action_consent', 'detail_preference'].includes(result.awaiting);
-  if (!clarificationAwaits.has(result.awaiting) && !progressiveContinuation) return {};
+  const currentRouteContext = Boolean(result.spoken_option_ids?.length) &&
+    ['demo_action_consent', 'detail_preference'].includes(result.awaiting);
+  if (!clarificationAwaits.has(result.awaiting) && !progressiveContinuation && !currentRouteContext) return {};
   const continueWithNextNeed = result.awaiting === 'support_need' || progressiveContinuation;
+  const resultNeeds = normalizeNeedValues(Array.isArray(result.needs) ? result.needs : normalizeNeeds(args));
+  const accumulatedPriorNeeds = [...new Set([
+    ...normalizeNeedValues(args.prior_needs || []),
+    ...resultNeeds
+  ])];
+  const accumulatedCompletedNeeds = [...new Set([
+    ...normalizeNeedValues(args.completed_needs || []),
+    ...normalizeNeedValues(result.handled_needs || [])
+  ])];
+  const handledNeeds = new Set(normalizeNeedValues(result.handled_needs || []));
+  const currentRouteNeeds = [...handledNeeds];
+  const remainingNeeds = resultNeeds.filter((need) => !handledNeeds.has(need));
+  const preferredNextNeed = normalizeSupportCategory(result.next_need || '');
+  const continuationNeeds = continueWithNextNeed
+    ? [...new Set([
+        ...(preferredNextNeed ? [preferredNextNeed] : []),
+        ...remainingNeeds
+          .filter((need) => need !== preferredNextNeed)
+          .map((need, index) => ({ need, index, priority: needPriority(need) }))
+          .sort((left, right) => right.priority - left.priority || left.index - right.index)
+          .map(({ need }) => need)
+      ])]
+    : [];
   return {
     location: args.location || result.location || '',
     landmark: args.landmark || '',
@@ -2349,12 +2485,105 @@ export function buildJoziPendingLookupContext(args = {}, result = {}) {
     phone_type: args.phone_type || 'unknown',
     safe_to_speak: args.safe_to_speak || args.safeToSpeak || 'unknown',
     safe_site_type: args.safe_site_type || args.safeSiteType || '',
-    continuation_need: continueWithNextNeed ? result.next_need || '' : '',
-    prior_needs: Array.isArray(result.needs) ? result.needs : normalizeNeeds(args),
-    needs: continueWithNextNeed && result.next_need
-      ? [result.next_need]
-      : Array.isArray(result.needs) ? result.needs : normalizeNeeds(args)
+    pending_awaiting: result.awaiting || '',
+    current_route_needs: currentRouteNeeds,
+    current_route_city_fallback_need: args.allow_city_fallback === true ? currentRouteNeeds[0] || '' : '',
+    continuation_need: continuationNeeds[0] || '',
+    continuation_needs: continuationNeeds,
+    completed_needs: accumulatedCompletedNeeds,
+    suppress_city_fallback: args.suppress_city_fallback === true,
+    prior_needs: accumulatedPriorNeeds,
+    needs: continuationNeeds.length ? continuationNeeds : resultNeeds
   };
+}
+
+export function applyJoziCityFallbackDecision({
+  contextualArgs = {},
+  offer = {},
+  consentProvided = false,
+  consentConfirmed = false,
+  callerAnswered = false
+} = {}) {
+  const active = offer.active === true && callerAnswered === true;
+  const requestedAcceptance = active && consentProvided && consentConfirmed === true;
+  const declined = active && consentProvided && consentConfirmed === false;
+  const fallbackNeed = normalizeSupportCategory(offer.fallback_need || '');
+  const contextualNeeds = normalizeNeedValues(
+    contextualArgs.needs || contextualArgs.categories || contextualArgs.service_types || []
+  );
+  const remainingNeeds = [...new Set([
+    ...normalizeNeedValues(offer.remaining_needs || []),
+    ...contextualNeeds.filter((need) => need !== fallbackNeed)
+  ])];
+  const safeToSpeak = normalizeSafeToSpeak(contextualArgs.safe_to_speak || contextualArgs.safeToSpeak);
+  const interruptingNeeds = contextualNeeds.filter((need) =>
+    need !== fallbackNeed && (
+      Boolean(URGENT_NEED_CONTEXT[need]) ||
+      needPriority(need) >= 90 ||
+      (PRIVACY_SENSITIVE_NEEDS.has(need) && safeToSpeak !== 'yes')
+    )
+  );
+  const accepted = requestedAcceptance && interruptingNeeds.length === 0;
+  const trustedCurrentRouteAuthorization = contextualArgs.allow_city_fallback === true &&
+    Boolean(contextualArgs.current_route_city_fallback_need) &&
+    contextualNeeds.includes(contextualArgs.current_route_city_fallback_need);
+  const nextArgs = {
+    ...contextualArgs,
+    allow_city_fallback: accepted || trustedCurrentRouteAuthorization
+  };
+  delete nextArgs.allowCityFallback;
+  if (accepted && fallbackNeed) {
+    nextArgs.needs = [fallbackNeed];
+    nextArgs.continuation_needs = remainingNeeds;
+  } else if (requestedAcceptance && interruptingNeeds.length) {
+    nextArgs.needs = contextualNeeds;
+    nextArgs.continuation_needs = [...new Set([
+      ...(fallbackNeed ? [fallbackNeed] : []),
+      ...remainingNeeds.filter((need) => !interruptingNeeds.includes(need))
+    ])];
+  } else if (declined) {
+    nextArgs.needs = remainingNeeds;
+    nextArgs.suppress_city_fallback = true;
+    nextArgs.prior_needs = [...new Set([
+      ...normalizeNeedValues(contextualArgs.prior_needs || []),
+      ...contextualNeeds,
+      ...(fallbackNeed ? [fallbackNeed] : [])
+    ])];
+  }
+  return { accepted, declined, deferred: requestedAcceptance && !accepted, fallbackNeed, remainingNeeds, contextualArgs: nextArgs };
+}
+
+export function isImmediateJoziConsentTurn({ currentItemId = '', currentTurnSeq = 0, offer = {} } = {}) {
+  const offeredItemId = String(offer.patient_item_id || '').trim();
+  const offeredTurnSeq = Number(offer.patient_turn_seq);
+  return Boolean(
+    String(currentItemId || '').trim() &&
+    offeredItemId &&
+    String(currentItemId).trim() !== offeredItemId &&
+    Number.isFinite(offeredTurnSeq) &&
+    Number(currentTurnSeq) === offeredTurnSeq + 1
+  );
+}
+
+export function stripUntrustedJoziInternalArgs(args = {}) {
+  const clean = { ...args };
+  for (const key of [
+    'allow_city_fallback',
+    'allowCityFallback',
+    'suppress_city_fallback',
+    'completed_needs',
+    'continuation_need',
+    'continuation_needs',
+    'pending_awaiting',
+    'current_route_needs',
+    'current_route_city_fallback_need',
+    'prior_needs',
+    'authorized_city_fallback_need',
+    'remaining_needs_after_city',
+    'handled_needs',
+    'demo_enabled'
+  ]) delete clean[key];
+  return clean;
 }
 
 function hasAmbiguousSafeSiteRequest(args = {}) {
@@ -2639,7 +2868,9 @@ function resourceMatchesNeed(resource, need) {
 }
 
 function audienceMatches(resource, audience, needs) {
-  if (resource.id === 'childline-116' && audience === 'adult' && needs.includes('child_safety')) return true;
+  if (resource.id === 'childline-116') {
+    return needs.includes('child_safety') || audience === 'child' || audience === 'family';
+  }
   const childInvolved = needs.includes('child_safety') || audience === 'child' || audience === 'family';
   const adultShelterPath = needs.some((need) => ['shelter_navigation', 'safe_space_navigation'].includes(need)) &&
     resource.primaryCategories.some((category) => ['shelter_navigation', 'safe_space_navigation'].includes(category)) &&
@@ -2891,6 +3122,7 @@ function buildConversationalSupportResponse({
   otherUncoveredNeeds,
   cityFallbackAvailable,
   deferredNeeds,
+  forcedContinuationNeeds = [],
   daytimeSpaceUnavailableTonight,
   coordinationPreference,
   detailRequested
@@ -2933,9 +3165,11 @@ function buildConversationalSupportResponse({
 
   const firstResource = selectedCandidates[0]?.resource;
   const firstCandidate = selectedCandidates[0];
+  const forcedContinuationSet = new Set(forcedContinuationNeeds);
   const handledNow = new Set(firstResource
-    ? needs.filter((need) => candidateConversationallyCoversNeed(firstCandidate, need))
+    ? needs.filter((need) => !forcedContinuationSet.has(need) && candidateConversationallyCoversNeed(firstCandidate, need))
     : []);
+  const remainingDeferredNeeds = deferredNeeds.filter((need) => !handledNow.has(need));
   const waitingNeeds = needs.filter((need) =>
     !handledNow.has(need) && !uncoveredHealthNeeds.includes(need) && !otherUncoveredNeeds.includes(need)
   );
@@ -2946,8 +3180,8 @@ function buildConversationalSupportResponse({
   if (specialistShelterNavigation) {
     sentences.push('A service navigator will check the right shelter pathway with you.');
   }
-  if (waitingNeeds.length || deferredNeeds.length) {
-    const pending = [...new Set([...waitingNeeds, ...deferredNeeds])];
+  if (waitingNeeds.length || remainingDeferredNeeds.length) {
+    const pending = [...new Set([...waitingNeeds, ...remainingDeferredNeeds])];
     sentences.push(`I'll come back to ${pending.map(humanSupportNeed).join(' and ')} next.`);
   }
 
@@ -2974,7 +3208,7 @@ function buildConversationalSupportResponse({
     awaiting = 'location';
     const emergencyCheck = ['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : '';
     question = `${emergencyCheck}What nearby neighbourhood, clinic, or landmark should I use?`;
-  } else if (otherUncoveredNeeds.length && !waitingNeeds.length && !deferredNeeds.length) {
+  } else if (otherUncoveredNeeds.length && !waitingNeeds.length && !remainingDeferredNeeds.length) {
     awaiting = contactMode === 'online'
       ? 'contact_mode'
       : cityFallbackAvailable
@@ -3015,7 +3249,8 @@ function buildConversationalSupportResponse({
     voiceResponse: sentences.filter(Boolean).join(' '),
     spokenOptionIds: first ? [first.id] : [],
     pendingOptionIds: allOptionIds.filter((id) => id !== first?.id),
-    nextNeed: highestPriorityNeed([...waitingNeeds, ...deferredNeeds]) ||
+    handledNeeds: [...handledNow],
+    nextNeed: highestPriorityNeed([...waitingNeeds, ...remainingDeferredNeeds]) ||
       highestPriorityNeed([...uncoveredHealthNeeds, ...otherUncoveredNeeds]),
     awaiting,
     suggestedDemoAction
