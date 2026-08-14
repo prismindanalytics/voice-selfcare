@@ -114,7 +114,7 @@ const ACTION_RESPONSE_INSTRUCTIONS = [
 ].join(' ');
 
 const JOZI_ACTION_RESPONSE_INSTRUCTIONS = [
-  'Say only the tool output voiceResponse, or faithfully translate it. Do not read the option metadata, internal status, or a second route that the spoken response has deliberately left for later.',
+  'Treat the tool output voiceResponse as the complete factual and safety boundary, not a word-for-word script. Express its meaning naturally, briefly acknowledge the caller\'s own words when helpful, and faithfully translate if needed. Do not read the option metadata, internal status, or a second route that the spoken response has deliberately left for later.',
   'Sound like a caring person on the phone: warm, unhurried, and conversational. Use a natural South African English cadence without caricature or an exaggerated accent, pronounce Johannesburg place names carefully, and read phone numbers in slow groups. Keep the turn to the short sentences in voiceResponse, then pause for the caller.',
   'Use voiceResponse as the complete factual basis without adding any provider name, telephone number, address, hours, availability, or capability.',
   'Never claim a real bed, meal, appointment, clinician, transfer, or service is confirmed unless the result explicitly says confirmed true.',
@@ -132,7 +132,7 @@ const JOZI_COMBINED_HEALTH_INSTRUCTIONS = `
 - For any emergency, call handle_emergency immediately.
 - For a Johannesburg clinic, hospital, mental-health service, medicine route, test route, or other destination, call find_support_services. Never name a destination from memory.
 - The old unverified provider, booking, referral, refill, commodity, and testing tools are not available in this mode. Do not ask to call them.
-- After the caller accepts a recommended clinic or service, use coordinate_support_demo to show the booking, intake check, or caring redirection. Do not lead with what the line cannot do. The tool response will make clear, at the action moment, that the result is a demo and is not connected to the external service.
+- After the caller accepts a recommended clinic or service, use coordinate_support_demo to show the phone connection, booking, intake check, or caring redirection. Do not lead with what the line cannot do. The tool response will make clear, at the action moment, that the result is a demo and is not connected to the external service.
 `.trim();
 
 export class CallerRegistry extends DurableObject {
@@ -2594,7 +2594,7 @@ function buildServiceInstructions(mode, memoryContext) {
 
 function buildMinimalInstructions(mode) {
   return modeIncludesJozi(mode)
-    ? 'You are the Jozi support line. Ask one short question at a time, use only curated support tools for destinations, and escalate immediate danger first.'
+    ? 'You are the caring Jozi My Jozi support line. Understand ordinary speech, remember needs and landmarks across turns, ask one short question at a time, use only verified support tools for destination facts, and escalate immediate danger first.'
     : 'You are a health support agent.';
 }
 
@@ -2821,39 +2821,46 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
     {
       type: 'function',
       name: 'find_support_services',
-      description: 'Find deterministic Johannesburg or Soweto support options only from the curated, public-source directory. Use for mental health, social support, shelter or safe-space navigation, women-and-children shelter, food or hygiene navigation, daytime community space, clinics, substance-use support, GBV, children and families, grants, documents, jobs, Zlto rewards, Mi-Change vouchers, legal help, or crisis routing. Never invent a destination.',
+      description: 'Find real Johannesburg or Soweto support options from the verified directory after you have intelligently interpreted the caller\'s natural words and remembered context. Preserve every stated need and the most specific caller-stated location or landmark. Use for MES services, mental health, social support, shelter or safe-space navigation, women-and-children shelter, food or hygiene navigation, daytime community space, clinics, substance-use support, GBV, children and families, grants, documents, jobs, Zlto rewards, Mi-Change vouchers, legal help, or crisis routing. Never invent a destination.',
       parameters: {
         type: 'object',
         properties: {
-          needs: { type: 'array', items: { type: 'string', enum: JOZI_SUPPORT_CATEGORIES } },
+          needs: {
+            type: 'array',
+            description: 'All needs the caller has stated, translated into these categories. Keep distinct needs distinct: safe tonight plus food must include shelter_navigation or safe_space_navigation AND food; coughing or needing a clinic is healthcare; a public place to sit during the day is daytime_community_space.',
+            items: { type: 'string', enum: JOZI_SUPPORT_CATEGORIES }
+          },
           service_type: { type: 'string', enum: JOZI_SUPPORT_CATEGORIES },
-          location: { type: 'string' },
-          landmark: { type: 'string' },
-          audience: { type: 'string', enum: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'] },
+          mes_programme: { type: 'string', enum: ['overview', 'assessment_centre', 'ekhaya', 'ekuthuleni', 'impilo', 'grow'], description: 'Use only when the caller asks about MES generally or names one of these verified MES programmes. Choose overview for a general MES question; otherwise select the named programme so the directory can return its current verified facts.' },
+          location: { type: 'string', description: 'The most specific suburb or area the caller stated anywhere in this call. Reuse it after follow-up questions. Omit this field if none was stated; never send unknown, not provided, N/A, or a guessed location.' },
+          landmark: { type: 'string', description: 'The most specific caller-stated landmark remembered from any turn, such as Joubert Park. Preserve it even if the caller also said Johannesburg generally. Omit rather than guess.' },
+          audience: { type: 'string', enum: ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'], description: 'Use only what the caller stated. Never infer adult versus family versus child; use unknown when it has not been established.' },
           contact_mode: { type: 'string', enum: ['phone', 'in_person', 'online', 'either'] },
           safety_context: {
             type: 'string',
             enum: ['none', 'medical_emergency', 'self_harm_imminent', 'suicide_imminent', 'overdose', 'violence_now', 'gbv_immediate', 'fire_emergency', 'immediate_danger']
           },
-          timing: { type: 'string', enum: ['now', 'today', 'tonight', 'routine'] },
+          timing: { type: 'string', enum: ['now', 'today', 'tonight', 'routine'], description: 'When the caller needs the service. Preserve tonight across follow-up turns. Symptom timing does not mean the caller requested a doctor connection.' },
+          coordination_preference: { type: 'string', enum: ['appointment_request', 'clinician_handoff', 'none'], description: 'For healthcare demos, reflect the action the caller actually requested or accepted. Default to none; do not infer clinician_handoff merely because symptoms are happening now.' },
+          detail_requested: { type: 'string', enum: ['recommendation', 'phone', 'hours', 'address', 'directions'], description: 'Use the caller\'s current request so the verified response can give an exact phone number, hours, address, or directions without relying on model memory.' },
           safe_to_speak: { type: 'string', enum: ['yes', 'no', 'unknown'] },
           phone_type: { type: 'string', enum: ['mobile', 'landline', 'unknown'] },
           max_options: { type: 'integer', minimum: 1, maximum: 2 }
         },
-        required: ['needs', 'location', 'audience', 'safety_context']
+        required: ['needs', 'safety_context']
       }
     },
     ...(demoEnabled ? [{
       type: 'function',
       name: 'coordinate_support_demo',
-      description: 'Complete the selected demo appointment, clinician handoff, availability check, intake request, assessment request, caring redirection, Zlto reward journey, or Mi-Change voucher pathway only after the caller answers the offer and clearly says yes. Set consent_confirmed true only for that explicit acceptance. Present the completed demo action positively; the tool response includes the required brief clarification that no external service was contacted.',
+      description: 'Complete the selected demo phone connection, appointment, clinician handoff, availability check, intake request, assessment request, caring redirection, Zlto reward journey, or Mi-Change voucher pathway only after the caller answers the offer and clearly says yes. Set consent_confirmed true only for that explicit acceptance. Present the completed demo action positively; the tool response includes the required brief clarification that no external service was contacted.',
       parameters: {
         type: 'object',
         properties: {
           resource_id: { type: 'string' },
           action: {
             type: 'string',
-            enum: ['appointment_request', 'clinician_handoff', 'availability_check', 'intake_request', 'navigator_handoff', 'warm_handoff', 'assessment_request', 'reward_signup', 'voucher_pathway']
+            enum: ['phone_connection', 'appointment_request', 'clinician_handoff', 'availability_check', 'intake_request', 'navigator_handoff', 'warm_handoff', 'assessment_request', 'reward_signup', 'voucher_pathway']
           },
           requested_time: { type: 'string' },
           reason: { type: 'string' },

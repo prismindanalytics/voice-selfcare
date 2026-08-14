@@ -88,15 +88,18 @@ test('Hillbrow overnight-safe-space request routes to MES navigation, not a City
   assert.match(result.options[0].availability_note, /does not confirm a walk-in intake/i);
 });
 
-test('Soweto shelter navigation stays in Soweto and does not guess specialist eligibility', () => {
+test('Soweto shelter navigation asks who needs shelter before naming any adult pathway', () => {
   const result = resolveJoziSupport({
     needs: ['shelter_navigation'],
     location: 'Soweto',
     audience: 'unknown',
     safety_context: 'none'
   });
-  assert.equal(result.options[0].id, 'coj-region-d-social-services');
-  assert.doesNotMatch(ids(result).join(' '), /mes|aged|frida|bienvenu/);
+  assert.equal(result.awaiting, 'audience');
+  assert.deepEqual(result.options, []);
+  assert.deepEqual(result.pending_option_ids, []);
+  assert.match(result.voiceResponse, /adult on your own.*with children.*under 18/i);
+  assert.doesNotMatch(JSON.stringify(result), /mes|aged|frida|bienvenu|coj-region-d/i);
 });
 
 test('inner-city adult shelter navigation uses MES and never promises a bed', () => {
@@ -510,11 +513,11 @@ test('location clarification preserves and speaks critical co-needs', () => {
     audience: 'adult',
     safety_context: 'none'
   });
-  assert.ok(ids(shelterAndMentalHealth).includes('coj-general-services'));
-  assert.ok(ids(shelterAndMentalHealth).includes('sadag-mental-health'));
+  assert.deepEqual(ids(shelterAndMentalHealth), []);
   assert.deepEqual(shelterAndMentalHealth.spoken_option_ids, []);
-  assert.deepEqual(shelterAndMentalHealth.pending_option_ids, ['coj-general-services', 'sadag-mental-health']);
+  assert.deepEqual(shelterAndMentalHealth.pending_option_ids, []);
   assert.match(shelterAndMentalHealth.voiceResponse, /suburb or nearest landmark/i);
+  assert.doesNotMatch(JSON.stringify(shelterAndMentalHealth), /coj-general-services|sadag-mental-health/i);
 });
 
 test('a specific uncovered suburb reports an unmatched co-need without duplicate filler', () => {
@@ -537,7 +540,7 @@ test('a specific uncovered suburb reports an unmatched co-need without duplicate
     safety_context: 'none'
   });
   assert.deepEqual(shelterAndClinic.uncovered_needs, ['healthcare']);
-  assert.deepEqual(ids(shelterAndClinic), ['coj-general-services']);
+  assert.deepEqual(ids(shelterAndClinic), ['joburg-homelessness-network']);
   assert.match(shelterAndClinic.voiceResponse, /nearby neighbourhood, clinic, or landmark/i);
 });
 
@@ -601,9 +604,10 @@ test('mixed requests retain regional navigation for an unmatched shelter or safe
     safe_to_speak: 'yes',
     safety_context: 'none'
   });
-  assert.deepEqual(ids(womenAndMentalHealth), ['coj-region-d-social-services', 'sadag-mental-health']);
+  assert.deepEqual(ids(womenAndMentalHealth), []);
   assert.deepEqual(womenAndMentalHealth.spoken_option_ids, []);
   assert.match(womenAndMentalHealth.voiceResponse, /suburb or nearest landmark/i);
+  assert.doesNotMatch(JSON.stringify(womenAndMentalHealth), /coj-region-d|sadag-mental-health/i);
 
   const safeSpaceAndCrisis = resolveJoziSupport({
     needs: ['safe_space_navigation', 'mental_health_crisis'],
@@ -649,7 +653,7 @@ test('uncovered specialist care stays phone-first while another requested route 
   });
   assert.equal(result.needsMoreLocation, true);
   assert.equal(result.options[0].address, '');
-  assert.ok(ids(result).includes('coj-general-services'));
+  assert.ok(ids(result).includes('joburg-homelessness-network'));
   assert.match(result.voiceResponse, /011 694 3805/);
   assert.match(result.voiceResponse, /come back to shelter navigation next/i);
   assert.doesNotMatch(result.voiceResponse, /City of Johannesburg General Services|phone-first specialist route/i);
@@ -766,7 +770,7 @@ test('adult shelter navigation tonight retains a call-first homelessness route',
   assert.match(result.options[0].availability_note, /does not confirm.*bed/i);
 });
 
-test('after-hours requests prefer 24-hour navigation and qualify unconfirmed opening', () => {
+test('after-hours broad support asks for a useful area instead of defaulting to City navigation', () => {
   const tonight = resolveJoziSupport({
     needs: ['social_support'],
     location: 'Soweto',
@@ -774,8 +778,10 @@ test('after-hours requests prefer 24-hour navigation and qualify unconfirmed ope
     safety_context: 'none',
     timing: 'tonight'
   });
-  assert.equal(tonight.options[0]?.id, 'coj-general-services');
-  assert.doesNotMatch(ids(tonight).join(' '), /region-d-social-services/);
+  assert.deepEqual(tonight.options, []);
+  assert.equal(tonight.awaiting, 'location');
+  assert.match(tonight.voiceResponse, /suburb|landmark/i);
+  assert.doesNotMatch(JSON.stringify(tonight), /coj-general-services|region-d-social-services/i);
 
   const now = resolveJoziSupport({
     needs: ['employment'],

@@ -62,10 +62,27 @@ test('Jozi action instructions enforce short progressive spoken turns', () => {
   const start = workerSource.indexOf('const JOZI_ACTION_RESPONSE_INSTRUCTIONS');
   const end = workerSource.indexOf('const JOZI_COMBINED_HEALTH_INSTRUCTIONS', start);
   const instructions = workerSource.slice(start, end);
-  assert.match(instructions, /Say only the tool output voiceResponse/);
+  assert.match(instructions, /complete factual and safety boundary, not a word-for-word script/);
+  assert.match(instructions, /acknowledge the caller\\'s own words/);
   assert.match(instructions, /second route.*left for later/);
   assert.match(instructions, /warm, unhurried, and conversational/);
   assert.match(instructions, /Do not preface the action with a limitation/);
+});
+
+test('Jozi lookup lets the voice model carry natural context without inventing placeholders', () => {
+  const start = workerSource.indexOf("name: 'find_support_services'");
+  const end = workerSource.indexOf("name: 'coordinate_support_demo'", start);
+  const lookupTool = workerSource.slice(start, end);
+  assert.match(lookupTool, /intelligently interpreted the caller\\'s natural words and remembered context/);
+  assert.match(lookupTool, /safe tonight plus food/);
+  assert.match(lookupTool, /coughing or needing a clinic is healthcare/);
+  assert.match(lookupTool, /mes_programme/);
+  assert.match(lookupTool, /Omit this field if none was stated/);
+  assert.match(lookupTool, /coordination_preference/);
+  assert.match(lookupTool, /detail_requested/);
+  assert.match(lookupTool, /required: \['needs', 'safety_context'\]/);
+  assert.doesNotMatch(lookupTool, /required: \[[^\]]*'location'/);
+  assert.doesNotMatch(lookupTool, /required: \[[^\]]*'audience'/);
 });
 
 test('emergency routing can be called for fire or violence without inventing symptoms', () => {
@@ -100,6 +117,7 @@ test('Jozi calls use their own recommended voice and caring delivery prompt', ()
 });
 
 test('demo coordination is bound to resources offered in the current call', () => {
+  assert.match(workerSource, /phone_connection/);
   assert.match(workerSource, /jozi_demo_consent_offer/);
   assert.match(workerSource, /result\.spoken_option_ids\?\.\[0\]/);
   assert.match(workerSource, /result\.suggested_demo_action/);

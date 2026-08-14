@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  JOZI_SUPPORT_INSTRUCTIONS,
   JOZI_SUPPORT_RESOURCES,
   buildServiceGreeting,
   coordinateJoziSupport,
@@ -61,13 +62,13 @@ test('safe tonight plus food becomes one short caring MES step once details are 
   assert.deepEqual(result.options.map((option) => option.id), ['mes-johannesburg-navigation']);
   assert.deepEqual(result.uncovered_needs, []);
   assert.deepEqual(result.deferred_needs, []);
-  assert.equal(result.suggested_demo_action, 'intake_request');
+  assert.equal(result.suggested_demo_action, 'phone_connection');
   assert.equal(result.awaiting, 'demo_action_consent');
   assert.ok(wordCount(result.voiceResponse) <= 55, result.voiceResponse);
   assert.equal(questionCount(result.voiceResponse), 1);
   assert.match(result.voiceResponse, /sort out tonight first/i);
   assert.match(result.voiceResponse, /MES Johannesburg.*shelter assessment and food support/i);
-  assert.match(result.voiceResponse, /demo intake check/i);
+  assert.match(result.voiceResponse, /connect you now in the demo/i);
   assert.doesNotMatch(result.voiceResponse, /Kapteijn|0860 562 874|source-checked|directory|voice response|navigation fallback/i);
   assert.ok(result.voiceResponse.endsWith('?'));
 });
@@ -81,9 +82,9 @@ test('routine clinic and emotional-support turns invite one demo action without 
     safety_context: 'none',
     demo_enabled: true
   });
-  assert.equal(clinic.suggested_demo_action, 'appointment_request');
+  assert.equal(clinic.suggested_demo_action, 'phone_connection');
   assert.match(clinic.voiceResponse, /sorry.*right care/i);
-  assert.match(clinic.voiceResponse, /book the demo appointment now/i);
+  assert.match(clinic.voiceResponse, /connect you now in the demo/i);
   assert.doesNotMatch(clinic.voiceResponse, /Klein Streets|queue|not a live booking/i);
   assert.ok(wordCount(clinic.voiceResponse) <= 45, clinic.voiceResponse);
 
@@ -95,10 +96,10 @@ test('routine clinic and emotional-support turns invite one demo action without 
     safety_context: 'none',
     demo_enabled: true
   });
-  assert.equal(emotional.suggested_demo_action, 'warm_handoff');
+  assert.equal(emotional.suggested_demo_action, 'phone_connection');
   assert.match(emotional.voiceResponse, /don't have to handle this alone/i);
   assert.match(emotional.voiceResponse, /0800 456 789/);
-  assert.match(emotional.voiceResponse, /demo connection now/i);
+  assert.match(emotional.voiceResponse, /connect you now in the demo/i);
   assert.doesNotMatch(emotional.voiceResponse, /LifeLine|warm handoff|source-checked/i);
   assert.ok(wordCount(emotional.voiceResponse) <= 45, emotional.voiceResponse);
 });
@@ -111,6 +112,7 @@ test('every demo coordination leads with the completed simulation and then tells
     ['mes-johannesburg-navigation', 'intake_request', /demo now shows the intake check.*complete/i],
     ['mes-johannesburg-navigation', 'navigator_handoff', /demo redirection screen.*ready/i],
     ['sadag-mental-health', 'warm_handoff', /demo connection screen.*ready/i],
+    ['sadag-mental-health', 'phone_connection', /demo connection screen.*ready/i],
     ['sanca-soweto', 'assessment_request', /demo now shows the assessment request.*ready/i],
     ['zlto-public-rewards', 'reward_signup', /demo Zlto sign-up and reward journey.*ready/i],
     ['michange-zlto-mes-pathway', 'voucher_pathway', /demo Mi-Change and Zlto partner check.*ready/i]
@@ -163,9 +165,17 @@ test('Zlto and Mi-Change journeys each offer one truthful simulated action', () 
   });
   assert.deepEqual(voucher.options.map((option) => option.id), ['michange-zlto-mes-pathway']);
   assert.equal(voucher.suggested_demo_action, 'voucher_pathway');
-  assert.match(voucher.voiceResponse, /MES.*011 725 6531/i);
+  assert.match(voucher.voiceResponse, /MES/i);
+  assert.doesNotMatch(voucher.voiceResponse, /011 725 6531/i);
   assert.match(voucher.voiceResponse, /demo voucher pathway check/i);
   assert.doesNotMatch(voucher.voiceResponse, /guaranteed|credited|cash/i);
+});
+
+test('Jozi health guidance never assumes housing or access to a hot shower', () => {
+  assert.match(JOZI_SUPPORT_INSTRUCTIONS, /sleeping rough.*shelter.*sharing/i);
+  assert.match(JOZI_SUPPORT_INSTRUCTIONS, /Never assume a private home, bed, bathroom, hot water/i);
+  assert.match(JOZI_SUPPORT_INSTRUCTIONS, /Do you have somewhere reasonably safe and sheltered to rest tonight\?/i);
+  assert.match(JOZI_SUPPORT_INSTRUCTIONS, /Never suggest a hot shower or bath unless/i);
 });
 
 test('GBV and sexual-assault support ask whether it is safe to speak before naming a service', () => {

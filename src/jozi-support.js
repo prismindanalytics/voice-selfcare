@@ -14,26 +14,127 @@ export const JOZI_SUPPORT_RESOURCES = [
   {
     id: 'mes-johannesburg-navigation',
     name: 'MES Johannesburg',
-    primaryCategories: ['shelter_navigation', 'safe_space_navigation', 'social_support'],
+    primaryCategories: ['shelter_navigation', 'safe_space_navigation', 'social_support', 'mes_services'],
     navigationCategories: ['food', 'hygiene', 'clothing', 'documentation', 'substance_use_support', 'healthcare', 'employment'],
-    areas: ['hillbrow', 'joubert park', 'braamfontein', 'berea', 'inner city', 'johannesburg cbd', 'doornfontein', 'jeppestown'],
+    areas: ['hillbrow', 'joubert park', 'braamfontein', 'berea', 'inner city', 'johannesburg cbd', 'doornfontein', 'jeppestown', 'fairview', 'bertrams'],
     contactModes: ['phone', 'in_person'],
     routingMode: 'call_before_visit',
-    addressRole: 'service_site',
+    addressRole: 'branch_contact',
     address: '16 Kapteijn Street, Hillbrow, Johannesburg, 2038',
     phone: '011 725 6531',
     hours: 'Confirm when calling',
     audiences: ['adult', 'unknown'],
     simulationActions: ['availability_check', 'intake_request', 'navigator_handoff'],
     allowNavigationMatch: true,
-    description: 'A current MES contact point for social-work navigation, shelter and safe-space information, ID and reunification help, recovery referrals, basic health referrals, and meals when available.',
-    availabilityNote: 'Call before travelling. This listing does not confirm a walk-in intake, a bed, a meal, or any other service today.',
+    routingPriority: 25,
+    description: 'The published MES Johannesburg branch contact for Assessment Centre and service navigation, including social-work assessment, shelter and safe-space information, food and social relief, public-health and rehabilitation links, documentation, family support, and GROW work readiness.',
+    availabilityNote: 'Call MES first and call before travelling. The published branch address does not confirm a walk-in intake or the current Assessment Centre entrance, and this listing does not confirm a bed, meal, shower, assessment slot, programme place, or opening hours.',
     sourceUrl: 'https://mes.org.za/contact-us/',
-    supportingSourceUrl: 'https://www.jozimyjozi.com/projects/mes-community-outreach-restoring-dignity-one-person-at-a-time/',
+    supportingSourceUrl: 'https://mes.org.za/mes-johannesburg-2/',
     sourceCheckedAt: JOZI_DIRECTORY_SOURCE_CHECKED_AT,
     verificationMethod: PUBLIC_SOURCE,
-    operationalStatus: 'public_contact_source_checked_live_availability_unconfirmed'
+    operationalStatus: 'official_branch_contact_current_assessment_entry_and_live_availability_unconfirmed'
   },
+  sourced({
+    id: 'mes-assessment-centre',
+    name: 'MES Johannesburg Assessment Centre',
+    primaryCategories: ['mes_services'],
+    navigationCategories: ['social_support', 'documentation', 'family_support', 'shelter_navigation', 'safe_space_navigation'],
+    areas: ['hillbrow', 'joubert park', 'inner city', 'johannesburg cbd'],
+    contactModes: ['phone'],
+    routingMode: 'phone_only',
+    addressRole: 'current_public_entrance_not_confirmed',
+    address: '',
+    phone: '011 725 6531',
+    hours: 'Call the current MES Johannesburg number to confirm',
+    audiences: ['adult', 'family', 'older_person', 'person_with_disability', 'unknown'],
+    simulationActions: ['intake_request', 'navigator_handoff'],
+    description: 'MES describes its Johannesburg Assessment Centre as the first programme entry point after outreach for helpdesk assessment, social-work planning, and referral into the right MES or partner service.',
+    availabilityNote: 'Current official pages confirm the programme but not a direct public entrance, direct line, hours, or walk-in status. Call 011 725 6531 to confirm the current entrance and intake process.',
+    sourceUrl: 'https://mes.org.za/mes-johannesburg/',
+    supportingSourceUrl: 'https://mes.org.za/youth-adults-at-risk/',
+    operationalStatus: 'current_programme_public_entrance_and_live_access_unconfirmed'
+  }),
+  sourced({
+    id: 'mes-ekhaya-shelter',
+    name: 'MES Ekhaya Shelter',
+    primaryCategories: ['mes_services'],
+    navigationCategories: ['shelter_navigation', 'safe_space_navigation', 'food', 'hygiene', 'social_support'],
+    areas: ['hillbrow', 'joubert park', 'inner city', 'johannesburg cbd'],
+    contactModes: ['phone'],
+    routingMode: 'phone_only',
+    addressRole: 'current_public_entrance_not_confirmed',
+    address: '',
+    phone: '011 725 6531',
+    hours: 'Call the current MES Johannesburg number to confirm',
+    audiences: ['adult'],
+    simulationActions: ['availability_check', 'intake_request'],
+    description: 'A current named MES Johannesburg shelter programme. MES says shelter clients are assessed and linked to its wider social-work, health, relief, and training services.',
+    availabilityNote: 'Current official material confirms the programme but not a direct public entrance or current intake hours. Call the MES Johannesburg branch first; admission, capacity, meals, fees, and hours are not confirmed.',
+    sourceUrl: 'https://mes.org.za/wp-content/uploads/2025/04/MES-Johannesburg-Needs-List-2025.pdf',
+    supportingSourceUrl: 'https://mes.org.za/wp-content/uploads/2024/09/MES-Annual-Report-24-High-Res-compressed.pdf',
+    operationalStatus: 'current_programme_public_entrance_and_live_capacity_unconfirmed'
+  }),
+  sourced({
+    id: 'mes-ekuthuleni-shelter',
+    name: 'MES Ekuthuleni Shelter',
+    primaryCategories: ['mes_services'],
+    navigationCategories: ['shelter_navigation', 'safe_space_navigation', 'food', 'hygiene', 'social_support'],
+    areas: ['hillbrow', 'joubert park', 'inner city', 'johannesburg cbd'],
+    contactModes: ['phone'],
+    routingMode: 'phone_only',
+    addressRole: 'current_public_entrance_not_confirmed',
+    address: '',
+    phone: '011 725 6531',
+    hours: 'Call the current MES Johannesburg number to confirm',
+    audiences: ['adult'],
+    simulationActions: ['availability_check', 'intake_request'],
+    description: 'A current named MES Johannesburg shelter programme, linked to MES assessment, social work, health, relief, and training services.',
+    availabilityNote: 'Current official material confirms the programme but not a direct public entrance or current intake hours. Call the MES Johannesburg branch first; admission, capacity, meals, fees, and hours are not confirmed.',
+    sourceUrl: 'https://mes.org.za/wp-content/uploads/2025/04/MES-Johannesburg-Needs-List-2025.pdf',
+    supportingSourceUrl: 'https://mes.org.za/wp-content/uploads/2024/09/MES-Annual-Report-24-High-Res-compressed.pdf',
+    operationalStatus: 'current_programme_public_entrance_and_live_capacity_unconfirmed'
+  }),
+  sourced({
+    id: 'mes-impilo-shelter',
+    name: 'MES Impilo Shelter and Health Support',
+    primaryCategories: ['mes_services'],
+    navigationCategories: ['shelter_navigation', 'healthcare', 'social_support', 'food'],
+    areas: ['fairview', 'jeppestown', 'doornfontein', 'inner city', 'johannesburg cbd'],
+    contactModes: ['phone', 'in_person'],
+    routingMode: 'call_before_visit',
+    addressRole: 'shelter_and_health_programme_location_call_first',
+    address: '353 Main Street, Fairview, Johannesburg',
+    phone: '011 725 6531',
+    hours: 'Call the current MES Johannesburg number to confirm',
+    audiences: ['adult', 'older_person', 'person_with_disability'],
+    simulationActions: ['availability_check', 'intake_request', 'navigator_handoff'],
+    description: 'A current MES Johannesburg programme combining shelter with professional health and social support, including care for people living with chronic or advanced illness.',
+    availabilityNote: 'Call the current MES branch number before travelling. This is not a general walk-in clinic, and the listing does not confirm admission, a bed, medical capacity, or the right level of care today.',
+    sourceUrl: 'https://mes.org.za/mes-johannesburg/',
+    supportingSourceUrl: 'https://mes.org.za/wp-content/uploads/2024/09/MES-Mould-Empower-Serve-NPC-2024-Final-signed-financial-statements.pdf',
+    operationalStatus: 'current_programme_and_property_source_checked_live_capacity_unconfirmed'
+  }),
+  sourced({
+    id: 'mes-grow-programme',
+    name: 'MES GROW Job and Life Rehabilitation Programme',
+    primaryCategories: ['mes_services', 'employment', 'skills_support'],
+    navigationCategories: ['social_support', 'documentation', 'substance_use_support'],
+    areas: ['hillbrow', 'joubert park', 'inner city', 'johannesburg cbd'],
+    contactModes: ['phone'],
+    routingMode: 'phone_only',
+    addressRole: 'current_public_entrance_not_confirmed',
+    address: '',
+    phone: '011 725 6531',
+    hours: 'Call the current MES Johannesburg number to confirm',
+    audiences: ['adult'],
+    simulationActions: ['assessment_request', 'navigator_handoff'],
+    description: 'MES GROW provides job-and-life rehabilitation, coaching, life skills, work readiness, job-search support, and paid shift opportunities where available.',
+    availabilityNote: 'Current official material confirms the programme but not its current public entrance or schedule. Call the current branch number to confirm assessment, eligibility, the entrance, and whether a shift or workshop is available.',
+    sourceUrl: 'https://mes.org.za/wp-content/uploads/2025/04/MES-Johannesburg-Needs-List-2025.pdf',
+    supportingSourceUrl: 'https://mes.org.za/mes-johannesburg-2/',
+    operationalStatus: 'current_programme_public_entrance_and_live_places_unconfirmed'
+  }),
   {
     id: 'coj-region-f-social-services',
     name: 'City of Johannesburg Region F Social Services',
@@ -50,6 +151,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'older_person', 'unknown'],
     simulationActions: ['appointment_request', 'navigator_handoff'],
     allowNavigationMatch: true,
+    fallbackOnly: true,
     description: 'A City social-services office for youth and family programmes, street-children programmes, older-person support, poverty-alleviation programmes, and social-service navigation.',
     availabilityNote: 'This is an office-hours public-service route, not a shelter or drop-in safe space. Call to confirm the correct unit and intake process.',
     sourceUrl: 'https://joburg.org.za/about_/regions/Pages/Region%20F%20-%20Inner%20City/Social-Services.aspx',
@@ -72,6 +174,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'older_person', 'unknown'],
     simulationActions: ['navigator_handoff'],
     allowNavigationMatch: true,
+    fallbackOnly: true,
     description: 'The City general-services line, used here as a citywide navigation fallback when a suitable local social-service destination is not in the curated directory.',
     availabilityNote: 'Ask to be routed to Social Development. This line cannot confirm shelter placement or availability.',
     sourceUrl: 'https://joburg.org.za/departments_/Pages/City%20directorates%20including%20departmental%20sub-directorates/Joburg%20Connect/Joburg-Call-Centre-.aspx',
@@ -95,6 +198,7 @@ export const JOZI_SUPPORT_RESOURCES = [
     audiences: ['adult', 'family', 'child', 'older_person', 'unknown'],
     simulationActions: ['appointment_request', 'navigator_handoff'],
     allowNavigationMatch: true,
+    fallbackOnly: true,
     description: 'The City social-development route for a Soweto social worker and support or shelter navigation.',
     availabilityNote: 'Call first to confirm the right unit and assessment process. This is not a direct shelter door and does not confirm placement.',
     sourceUrl: 'https://joburg.org.za/departments_/Pages/City%20directorates%20including%20departmental%20sub-directorates/Human%20Development/Contacts%20and%20Other%20organisations.aspx',
@@ -1130,9 +1234,9 @@ export const JOZI_EXCLUDED_DESTINATIONS = [
     sourceUrl: 'https://www.jozimyjozi.com/projects/drop-in-centres'
   },
   {
-    name: 'MES Ekhaya, Ekuthuleni, Linatex, and Othandweni direct shelter doors',
-    reason: 'Current MES material confirms programmes, but the direct addresses and intake claims circulate from older material. Route through MES at 16 Kapteijn Street first.',
-    sourceUrl: 'https://mes.org.za/youth-adults-at-risk/'
+    name: 'MES Linatex and Othandweni direct shelter doors',
+    reason: 'Linatex is not named in the current 2025 Johannesburg programme list, and Jozi My Jozi describes Othandweni as being developed. Use the current MES Johannesburg number and Assessment Centre pathway instead.',
+    sourceUrl: 'https://mes.org.za/wp-content/uploads/2025/04/MES-Johannesburg-Needs-List-2025.pdf'
   },
   {
     name: 'Esselen Street Clinic',
@@ -1185,9 +1289,25 @@ const SUPPORT_CATEGORY_ALIASES = {
   somewhere_safe: 'safe_space_navigation',
   safe_place: 'safe_space_navigation',
   safe_space: 'safe_space_navigation',
+  safe_tonight: 'safe_space_navigation',
+  somewhere_safe_tonight: 'safe_space_navigation',
+  shelter_and_food: ['shelter_navigation', 'food'],
   safe_community_space: 'daytime_community_space',
   community_space: 'daytime_community_space',
   daytime_space: 'daytime_community_space',
+  daytime_community_service: 'daytime_community_space',
+  daytime_community_support: 'daytime_community_space',
+  community_centre: 'daytime_community_space',
+  community_center: 'daytime_community_space',
+  recreation_centre: 'daytime_community_space',
+  recreation_center: 'daytime_community_space',
+  drop_in_centre: 'daytime_community_space',
+  drop_in_center: 'daytime_community_space',
+  public_space: 'daytime_community_space',
+  public_space_during_the_day: 'daytime_community_space',
+  somewhere_public_to_sit: 'daytime_community_space',
+  safe_during_the_day: 'daytime_community_space',
+  safe_in_the_day: 'daytime_community_space',
   library: 'daytime_community_space',
   community_support: 'social_support',
   counselling: 'emotional_support',
@@ -1220,6 +1340,20 @@ const SUPPORT_CATEGORY_ALIASES = {
   identity_document: 'identity_documents',
   health: 'healthcare',
   clinic: 'healthcare',
+  need_a_clinic: 'healthcare',
+  see_a_doctor: 'healthcare',
+  medical_care: 'healthcare',
+  health_support: 'healthcare',
+  feel_sick: 'healthcare',
+  feeling_sick: 'healthcare',
+  sick: 'healthcare',
+  doctor: 'healthcare',
+  coughing: 'healthcare',
+  cough: 'healthcare',
+  mes: 'mes_services',
+  mes_service: 'mes_services',
+  mes_services: 'mes_services',
+  mes_locations: 'mes_services',
   gbv: 'gbv_support',
   domestic_violence: 'gbv_support',
   child_support: 'child_safety',
@@ -1230,6 +1364,7 @@ const SUPPORT_CATEGORY_ALIASES = {
 };
 
 export const JOZI_SUPPORT_CATEGORIES = [
+  'mes_services',
   'shelter_navigation',
   'safe_space_navigation',
   'daytime_community_space',
@@ -1308,7 +1443,7 @@ const URGENT_NEED_CONTEXT = {
 };
 
 export const JOZI_SUPPORT_INSTRUCTIONS = `
-You are the Jozi support line: a calm, voice-first doorway to source-checked Johannesburg health and community support.
+You are the Jozi My Jozi support line: a calm, caring, voice-first doorway to verified Johannesburg health and community support.
 
 You can help with mental wellbeing, social support, shelter and safe-space navigation, food and hygiene navigation, clinics, substance-use support, grants, documents, work support, Zlto rewards and Mi-Change partner pathways, legal help, family and child safety, GBV support, and emergencies.
 
@@ -1319,7 +1454,7 @@ SAFETY AND DIGNITY
 - Use natural spoken English, contractions, and short sentences. Avoid internal words such as "route", "directory", "source-checked", "warm handoff", "voice response", and "navigation fallback" when speaking to the caller.
 - Ask only one short question at a time. Never ask a question and then continue into a list of organisations or instructions.
 - When the caller has several needs, acknowledge all of them but handle the most urgent practical need first. Say which need you will return to next rather than giving everything at once.
-- Before ordinary routing, ask one brief question about immediate danger, severe medical symptoms, or whether the person might harm themselves.
+- Use judgement rather than a generic checklist. Ask a safety question only when the caller's need could involve immediate danger, an overnight safety need, a medical red flag, self-harm, violence, or abuse.
 - For immediate danger, medical emergency, imminent self-harm, overdose, or violence now, use the emergency tool immediately. Ask for a suburb or nearest landmark, not an exact sleeping location.
 - For GBV, first ask whether it is safe to speak and pass that answer to find_support_services. Do not promise police involvement, text the caller, or disclose their location without consent.
 - A child or family must never be routed to an adult shelter pathway.
@@ -1332,14 +1467,33 @@ VOICE DELIVERY
 - Speak a little more slowly than ordinary conversation. Read phone numbers in short groups, pause, and offer to repeat them.
 - Match the caller's language when you can do so confidently, while keeping the same gentle, respectful tone.
 
+UNDERSTANDING NATURAL CONVERSATION
+- You own the conversation and the interpretation. Understand ordinary speech; never ask the caller to choose a service category or repeat a fact they already gave you.
+- Carry forward every need, symptom, timing detail, audience detail, suburb, and landmark the caller has already stated anywhere in the call. After a safety follow-up, reuse the earlier facts when you call a tool.
+- Translate natural language into the tool categories yourself. Examples: coughing, feeling sick, needing a doctor, or asking for a clinic means healthcare; somewhere public to sit, a community centre, a library, or somewhere less isolated during the day means daytime_community_space; somewhere safe tonight plus something to eat means safe_space_navigation or shelter_navigation AND food.
+- Preserve multiple needs separately. Do not collapse shelter plus food into generic social_support, and do not replace a specific landmark with broad "Johannesburg".
+- Prefer the most specific caller-stated landmark or neighbourhood from the full conversation. Never send placeholder locations such as "unknown", "not provided", or "N/A". Omit a missing location instead.
+- Never invent whether the caller is an adult alone, an adult with children, or under 18. Ask only when that distinction changes a shelter or safety pathway.
+- If enough context is already present, act on it without another location question. If a physical destination genuinely cannot be chosen safely, ask one natural follow-up and retain all other context for the next tool call.
+
+HEALTH ROUTING
+- Interpret symptoms intelligently, give brief evidence-based conversational support, and use find_support_services when a Johannesburg clinic, hospital, medicine service, or other physical health destination is needed.
+- Many callers may be sleeping rough, staying in a shelter, sharing a crowded room, or living without reliable water, electricity, data, transport, food storage, or money. Never assume a private home, bed, bathroom, hot water, quiet room, fridge, or ability to buy something. Do not assume that an individual caller is homeless; ask one neutral practical question when the answer changes what is useful.
+- If someone says they cannot sleep, first ask, "Do you have somewhere reasonably safe and sheltered to rest tonight?" If not, check immediate danger and help with a safe-space or shelter pathway. If yes, continue health support one question at a time and tailor any advice to what they actually have. Never suggest a hot shower or bath unless the caller has said that is available and practical.
+- Before routine clinic routing, ask one complaint-specific red-flag question when needed. For a cough, check severe breathlessness, chest pain, coughing blood, or confusion in one short question. If a red flag is present, use handle_emergency immediately; otherwise look up healthcare using the caller's remembered area or landmark.
+- "Now" can describe when symptoms are happening; it does not mean the caller asked for a doctor connection. If you speak a verified non-emergency phone number, offer the demo phone connection. Otherwise offer a demo appointment by default, while honoring an explicit request to book or speak to a doctor.
+- Never name a clinic, hospital, phone number, address, or hours from memory. The verified tool result supplies those facts.
+
 ROUTING
 - Use find_support_services for all community-support destinations. Never invent a provider, phone number, address, hours, bed, meal, or eligibility rule.
+- For an eligible adult in Hillbrow or the inner city who needs shelter, somewhere safer, food, hygiene, documents, or practical homelessness support, start with MES Johannesburg. MES is Jozi My Jozi's partner pathway. Use City social services only when no suitable partner or specialist option matches, MES is outside the caller's area or audience, or the caller asks for the City.
+- If the caller asks what MES offers, use mes_services with mes_programme=overview. If they name Assessment Centre, Ekhaya, Ekuthuleni, Impilo, or GROW, pass that exact mes_programme and explain it one programme at a time. MES also includes youth and family support, food and social relief. Use the current MES branch number to confirm the right entrance and availability.
 - Clarify what "safe space" means: danger now, somewhere for tonight, a daytime support point, child/family safety, GBV support, or simply someone to talk to.
 - Recommend one best next step at a time. Give a second option only after the first is declined, unavailable, or completed, unless two distinct urgent needs must be addressed immediately.
-- Use progressive disclosure: first say the organisation and why it fits; then ask permission to check, book, or connect in the demo. Give the phone number, directions, or hours only when they are the next useful detail or the caller asks.
+- Use progressive disclosure: first say the organisation and why it fits; then ask permission to check, book, or connect in the demo. If you speak a non-emergency phone number, offer to connect the caller now in the demo. Give directions or hours only when they are the next useful detail or the caller asks.
 - Say only the uncertainty that changes the next action, and say it once. Do not stack a description, phone number, address, hours, and every caveat into one turn.
 - The City policy requires social-worker assessment and referral for City-managed or contracted shelter placement. Do not assess eligibility, book a real bed, or promise availability.
-- If the directory has no suitable local option, say so plainly and offer the City navigation route. Do not substitute a distant physical destination.
+- If the verified directory has no suitable local option, ask one useful clarifying question or offer the closest relevant partner or specialist phone route. Offer City navigation only as a last resort. Do not substitute a distant physical destination.
 
 DEMO COORDINATION
 - coordinate_support_demo is a presentation-only simulation. Use it only after the caller chooses a returned resource.
@@ -1390,9 +1544,9 @@ export function buildServiceGreeting(mode, demoEnabled = false) {
   }
   const demoLabel = demoEnabled ? ' demo' : '';
   if (normalized === 'jozi') {
-    return `Hello, you've reached the Jozi support${demoLabel} line. I'm here to help. What would help most right now?`;
+    return `Hello, you've reached the Jozi My Jozi support${demoLabel} line. I'm here to help. What would help most right now?`;
   }
-  return `Hello, you've reached the Jozi health and support${demoLabel} line. I'm here to help. What would help most right now?`;
+  return `Hello, you've reached the Jozi My Jozi health and support${demoLabel} line. I'm here to help. What would help most right now?`;
 }
 
 export function normalizeSupportCategory(value) {
@@ -1432,10 +1586,19 @@ export function validateJoziResources(resources = JOZI_SUPPORT_RESOURCES, now = 
 export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES) {
   let needs = normalizeNeeds(args);
   const demoEnabled = args.demo_enabled === true;
-  const location = normalizeJoziLocation(args.location || args.landmark || args.area || '');
+  const locationInput = selectCallerStatedLocation(args);
+  let location = normalizeJoziLocation(locationInput);
+  if (needs.includes('daytime_community_space') && location === 'orlando') location = 'orlando east';
   const audience = normalizeAudience(args.audience || args.caller_type);
   const contactMode = normalizeContactMode(args.contact_mode || args.contactMode);
   const timing = normalizeTiming(args.timing || args.needed_when || args.urgency);
+  const coordinationPreference = normalizeCoordinationPreference(args.coordination_preference || args.coordinationPreference);
+  const detailRequested = normalizeDetailRequested(args.detail_requested || args.detailRequested);
+  const requestedMesProgrammeId = mesProgrammeResourceId(args.mes_programme || args.mesProgramme);
+  const requestedMesResource = requestedMesProgrammeId
+    ? resources.find((resource) => resource.id === requestedMesProgrammeId)
+    : undefined;
+  const informationalMesProgrammeRequest = needs.length === 1 && needs[0] === 'mes_services' && Boolean(requestedMesResource);
   const statedSafetyContext = normalizeSupportCategory(args.safety_context || args.safetyContext || '');
   const safetyContext = deriveUrgentSafetyContext(statedSafetyContext, needs);
 
@@ -1481,6 +1644,44 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     };
   }
 
+  if (informationalMesProgrammeRequest && audience === 'unknown' && !requestedMesResource.audiences.includes('unknown')) {
+    return {
+      success: false,
+      status: 'audience_clarification_required',
+      error: 'mes_programme_audience_required',
+      needs,
+      location: locationInput,
+      audience,
+      timing,
+      options: [],
+      spoken_option_ids: [],
+      pending_option_ids: [],
+      awaiting: 'audience',
+      suggested_demo_action: '',
+      availability_confirmed: false,
+      voiceResponse: `${careLead(needs)} ${mesProgrammeSpokenSummary(requestedMesResource, false)} Is this for an adult on their own, an adult with children, or someone under 18?`
+    };
+  }
+
+  if (informationalMesProgrammeRequest && audience !== 'unknown' && !audienceMatches(requestedMesResource, audience, needs)) {
+    return {
+      success: false,
+      status: 'audience_not_supported',
+      error: 'mes_programme_not_suitable_for_audience',
+      needs,
+      location: locationInput,
+      audience,
+      timing,
+      options: [],
+      spoken_option_ids: [],
+      pending_option_ids: [],
+      awaiting: 'support_need',
+      suggested_demo_action: '',
+      availability_confirmed: false,
+      voiceResponse: `${careLead(needs)} ${mesProgrammeSpokenSummary(requestedMesResource, false)} I won't direct a child or family into an adult-only programme. Would you like me to find the right child or family support instead?`
+    };
+  }
+
   if (audience === 'child' && needs.some((need) => ['shelter_navigation', 'safe_space_navigation'].includes(need))) {
     needs = [...new Set(['child_safety', ...needs])];
   }
@@ -1509,6 +1710,7 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
   const usefulLocation = isUsefulJoziLocation(location);
   const healthNeeds = ['healthcare', 'medication', 'hospital_care'];
   const healthLocationNeeded = !usefulLocation && needs.some((need) => healthNeeds.includes(need));
+  const daytimeLocationNeeded = !usefulLocation && needs.includes('daytime_community_space');
   const supportLocationNeeded = !usefulLocation && needs.some((need) => [
     'shelter_navigation',
     'safe_space_navigation',
@@ -1566,6 +1768,25 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     timing
   });
 
+  if (needs.includes('mes_services') && requestedMesProgrammeId) {
+    const requestedResource = resources.find((resource) => resource.id === requestedMesProgrammeId);
+    const informationalProgrammeRequest = needs.every((need) => need === 'mes_services');
+    if (requestedResource && informationalProgrammeRequest && contactMode !== 'online' &&
+      !matched.some((candidate) => candidate.resource.id === requestedMesProgrammeId)) {
+      matched.unshift({
+        resource: requestedResource,
+        categoryScore: scoreCategories(requestedResource, needs),
+        locationScore: scoreLocation(requestedResource, location, usefulLocation),
+        modeScore: scoreContactMode(requestedResource, contactMode),
+        timingScore: scoreTiming(requestedResource, timing, needs),
+        coveredNeeds: ['mes_services']
+      });
+    }
+    matched.sort((left, right) =>
+      Number(right.resource.id === requestedMesProgrammeId) - Number(left.resource.id === requestedMesProgrammeId)
+    );
+  }
+
   if (!matched.length) {
     if (contactMode === 'online') {
       return noMatch(
@@ -1579,8 +1800,16 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       return noMatch(
         'specific_location_required',
         needs,
-        args.location,
+        locationInput,
         `I want to make sure I do not send you too far. ${['now', 'tonight'].includes(timing) ? 'If this is a medical emergency, tell me now. ' : ''}Which Johannesburg or Soweto neighbourhood, clinic name, or nearest landmark should I use?`
+      );
+    }
+    if (daytimeLocationNeeded) {
+      return noMatch(
+        'specific_location_required',
+        needs,
+        locationInput,
+        'I can find a real daytime community place. Which neighbourhood or nearest landmark are you near?'
       );
     }
     if (contactMode !== 'online' && needs.includes('women_children_shelter')) {
@@ -1603,9 +1832,9 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
           spoken_option_ids: [option.id],
           pending_option_ids: [],
           next_need: 'women_children_shelter',
-          awaiting: 'detail_preference',
-          suggested_demo_action: '',
-          voiceResponse: `I hear you. I do not have a confirmed women-and-children shelter place in that area. ${option.name} can help you find the right service on ${option.phone}. Would you like me to repeat the number?`
+          awaiting: demoEnabled ? 'demo_action_consent' : 'detail_preference',
+          suggested_demo_action: demoEnabled ? 'phone_connection' : '',
+          voiceResponse: `I hear you. I do not have a confirmed women-and-children shelter place in that area. ${option.name} can help you find the right service on ${option.phone}. ${demoEnabled ? 'Would you like me to connect you now in the demo?' : 'Would you like me to repeat the number?'}`
         };
       }
     }
@@ -1625,10 +1854,10 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
       spoken_option_ids: fallbackOption.map((option) => option.id),
       pending_option_ids: [],
       next_need: needs[0] || '',
-      awaiting: fallbackOption.length ? 'detail_preference' : 'location',
-      suggested_demo_action: '',
+      awaiting: fallbackOption.length ? (demoEnabled ? 'demo_action_consent' : 'detail_preference') : 'location',
+      suggested_demo_action: fallbackOption.length && demoEnabled ? 'phone_connection' : '',
       voiceResponse: fallbackOption.length
-        ? `I have not found a suitable local place yet. You can call ${fallbackOption[0].name} on ${fallbackOption[0].phone} for help finding the right service. Would you like me to repeat the number?`
+        ? `I have not found a suitable local place yet. You can call ${fallbackOption[0].name} on ${fallbackOption[0].phone} for help finding the right service. ${demoEnabled ? 'Would you like me to connect you now in the demo?' : 'Would you like me to repeat the number?'}`
         : contactMode === 'online'
           ? 'I have not found a verified online option for that need. Would you like a phone or in-person route instead?'
           : 'I have not found a suitable local option yet. What nearby area or another kind of help should I try?'
@@ -1671,16 +1900,19 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
     specialistShelterNavigation,
     specialistLocationNeeded,
     healthLocationNeeded,
-    supportLocationNeeded,
+    supportLocationNeeded: supportLocationNeeded || daytimeLocationNeeded,
     uncoveredHealthNeeds,
     otherUncoveredNeeds,
     deferredNeeds,
-    daytimeSpaceUnavailableTonight
+    daytimeSpaceUnavailableTonight,
+    coordinationPreference,
+    detailRequested
   });
   const onlyPhoneAlternatives = contactMode === 'in_person' && selected.length > 0 && selected.every((option) =>
     option.contact_modes.length === 1 && option.contact_modes[0] === 'phone'
   );
   const partialMatch = uncoveredNeeds.length > 0 || deferredNeeds.length > 0;
+  const exposedOptions = conversation.spokenOptionIds.length ? selected : [];
   return {
     success: !partialMatch && !onlyPhoneAlternatives && !shelterAudienceNeeded && !specialistShelterNavigation,
     status: partialMatch
@@ -1707,21 +1939,21 @@ export function resolveJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOURCES
             : undefined,
     directory: 'jozi_curated_public_sources',
     needs,
-    location: args.location || '',
+    location: locationInput,
     audience,
     timing,
     needsMoreLocation,
     needsMoreAudience: shelterAudienceNeeded,
     uncovered_needs: uncoveredNeeds,
     deferred_needs: deferredNeeds,
-    options: selected,
-    selected: selected[0],
-    source_checked_at: selected[0].source_checked_at,
+    options: exposedOptions,
+    selected: exposedOptions[0],
+    source_checked_at: exposedOptions[0]?.source_checked_at || '',
     availability_confirmed: false,
     phone_alternative_included: phoneAlternativeIncluded,
     phoneAlternatives: onlyPhoneAlternatives,
     spoken_option_ids: conversation.spokenOptionIds,
-    pending_option_ids: conversation.pendingOptionIds,
+    pending_option_ids: conversation.spokenOptionIds.length ? conversation.pendingOptionIds : [],
     next_need: conversation.nextNeed,
     awaiting: conversation.awaiting,
     suggested_demo_action: conversation.suggestedDemoAction,
@@ -1780,7 +2012,9 @@ export function coordinateJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOUR
     };
   }
 
-  if (!resource.simulationActions.includes(action)) {
+  const supportedActions = new Set(resource.simulationActions || []);
+  if (resource.phone && resource.routingMode !== 'emergency_phone') supportedActions.add('phone_connection');
+  if (!supportedActions.has(action)) {
     return {
       success: false,
       simulation: true,
@@ -1813,6 +2047,7 @@ export function coordinateJoziSupport(args = {}, resources = JOZI_SUPPORT_RESOUR
     intake_request: `All set—the demo now shows the intake check with ${resource.name} as complete. ${resource.name} was not contacted, so no real request was sent and no place or meal was reserved.`,
     navigator_handoff: `All set—the demo redirection screen for ${resource.name} is ready. No call or transfer to ${resource.name} has been made.`,
     warm_handoff: `Stay with me—the demo connection screen for ${resource.name} is ready. No call has been placed and nobody is connected.`,
+    phone_connection: `Stay with me—the demo connection screen for ${resource.name} is ready. No call or transfer has been placed, and nobody is connected.`,
     assessment_request: `All set—the demo now shows the assessment request with ${resource.name} as ready. ${resource.name} was not contacted, so no real assessment was requested.`,
     reward_signup: 'All set—the demo Zlto sign-up and reward journey is ready. No Zlto account, task, reward, payment, or marketplace order was created.',
     voucher_pathway: 'All set—the demo Mi-Change and Zlto partner check is ready. MES and Zlto were not contacted, and no voucher, reward, meal, shower, shelter place, or service booking was created.'
@@ -1883,6 +2118,9 @@ function expandSupportCategory(value) {
 
 function normalizeAudience(value) {
   const normalized = normalizeSupportCategory(value || 'unknown');
+  if (['adult_on_my_own', 'adult_alone', 'single_adult', 'individual_adult', 'individual'].includes(normalized)) return 'adult';
+  if (['adult_with_children', 'adult_with_kids', 'with_children', 'with_kids', 'parent_with_children'].includes(normalized)) return 'family';
+  if (['under_18', 'under_eighteen', 'minor', 'young_person_under_18'].includes(normalized)) return 'child';
   return ['adult', 'family', 'child', 'older_person', 'person_with_disability', 'unknown'].includes(normalized) ? normalized : 'unknown';
 }
 
@@ -1894,6 +2132,7 @@ function normalizeContactMode(value) {
 function normalizeTiming(value) {
   const normalized = normalizeSupportCategory(value || 'routine');
   if (['now', 'immediate'].includes(normalized)) return 'now';
+  if (['this_evening', 'later_tonight', 'this_tonight', 'overnight'].includes(normalized)) return 'tonight';
   return ['today', 'tonight', 'routine'].includes(normalized) ? normalized : 'routine';
 }
 
@@ -1902,6 +2141,29 @@ function normalizeSafeToSpeak(value) {
   if (['yes', 'true', 'safe'].includes(normalized)) return 'yes';
   if (['no', 'false', 'unsafe'].includes(normalized)) return 'no';
   return 'unknown';
+}
+
+function mesProgrammeResourceId(value) {
+  const normalized = normalizeSupportCategory(value || 'overview');
+  const ids = {
+    overview: 'mes-johannesburg-navigation',
+    assessment_centre: 'mes-assessment-centre',
+    ekhaya: 'mes-ekhaya-shelter',
+    ekuthuleni: 'mes-ekuthuleni-shelter',
+    impilo: 'mes-impilo-shelter',
+    grow: 'mes-grow-programme'
+  };
+  return ids[normalized] || '';
+}
+
+function normalizeCoordinationPreference(value) {
+  const normalized = normalizeSupportCategory(value || 'none');
+  return ['appointment_request', 'clinician_handoff', 'none'].includes(normalized) ? normalized : 'none';
+}
+
+function normalizeDetailRequested(value) {
+  const normalized = normalizeSupportCategory(value || 'recommendation');
+  return ['recommendation', 'phone', 'hours', 'address', 'directions'].includes(normalized) ? normalized : 'recommendation';
 }
 
 function deriveUrgentSafetyContext(statedSafetyContext, needs) {
@@ -1927,6 +2189,7 @@ function rankJoziResources({ resources, needs, location, usefulLocation, audienc
     .filter(({ categoryScore }) => categoryScore > 0)
     .filter(({ resource }) => locationAllowsResource(resource, location, usefulLocation))
     .sort((left, right) =>
+      Number(Boolean(left.resource.fallbackOnly)) - Number(Boolean(right.resource.fallbackOnly)) ||
       right.timingScore - left.timingScore ||
       right.categoryScore - left.categoryScore ||
       right.locationScore - left.locationScore ||
@@ -1989,10 +2252,21 @@ function addCoveredCandidate(candidates, candidate, need) {
 }
 
 function selectDiverseCandidates(matched, needs, maxOptions) {
-  const completeCandidate = matched.find((candidate) =>
+  const directCompleteCandidate = matched.find((candidate) =>
+    !candidate.resource.fallbackOnly &&
     needs.length > 1 && needs.every((need) => resourceScoresForNeed(candidate.resource, need))
   );
-  if (completeCandidate) return [completeCandidate];
+  if (directCompleteCandidate) return [directCompleteCandidate];
+
+  const directCoverageExists = matched.some((candidate) =>
+    !candidate.resource.fallbackOnly && needs.some((need) => candidateMatchesNeed(candidate, need))
+  );
+  if (!directCoverageExists) {
+    const fallbackCompleteCandidate = matched.find((candidate) =>
+      needs.length > 1 && needs.every((need) => resourceScoresForNeed(candidate.resource, need))
+    );
+    if (fallbackCompleteCandidate) return [fallbackCompleteCandidate];
+  }
 
   const selected = [];
   const priorityNeeds = needs
@@ -2104,13 +2378,19 @@ function scoreContactMode(resource, contactMode) {
 
 function scoreCategories(resource, needs) {
   let score = 0;
+  let hasPrimaryMatch = false;
   for (const need of needs) {
-    if (resource.primaryCategories.includes(need)) score += 30;
+    if (resource.primaryCategories.includes(need)) {
+      score += 30;
+      hasPrimaryMatch = true;
+    }
     else if (need === 'medication' && resource.primaryCategories.includes('healthcare')) score += 18;
     else if (['healthcare', 'medication'].includes(need) && resource.id === 'mes-johannesburg-navigation') continue;
     else if (resource.allowNavigationMatch && resource.navigationCategories.includes(need)) score += 9;
   }
-  if (score > 0) score += Number(resource.routingPriority || 0);
+  // Priority breaks ties between services that directly provide the requested
+  // support. It must not let a broad navigator outrank a dedicated specialist.
+  if (hasPrimaryMatch) score += Number(resource.routingPriority || 0);
   return score;
 }
 
@@ -2179,16 +2459,22 @@ function locationMatchesArea(location, area) {
   if (!location || location.length < 3) return false;
   const normalizedArea = normalizeSearchText(area);
   if (!normalizedArea || normalizedArea.length < 3) return false;
-  const vagueFragments = new Set(['east', 'west', 'north', 'south', 'central', 'city', 'town', 'the city', 'downtown']);
+  const vagueFragments = new Set([
+    'east', 'west', 'north', 'south', 'central', 'city', 'town', 'the city', 'downtown',
+    'park', 'station', 'street', 'road', 'centre', 'center'
+  ]);
   if (vagueFragments.has(location)) return false;
   if (location === normalizedArea) return true;
-  if (location.split(' ').length < 2 || normalizedArea.split(' ').length < 2) return false;
-  return location.includes(normalizedArea) || normalizedArea.includes(location);
+  return ` ${location} `.includes(` ${normalizedArea} `) || ` ${normalizedArea} `.includes(` ${location} `);
 }
 
 function publicResource(resource) {
   const sensitiveAddress = resource.addressSharing === 'after_safe_to_share';
   const address = sensitiveAddress ? '' : (resource.address || '');
+  const demoActions = [...new Set([
+    ...(resource.simulationActions || []),
+    ...(resource.phone && resource.routingMode !== 'emergency_phone' ? ['phone_connection'] : [])
+  ])];
   return {
     id: resource.id,
     name: resource.name,
@@ -2203,7 +2489,7 @@ function publicResource(resource) {
     website: resource.website || '',
     hours: resource.hours || 'Confirm when calling',
     audiences: resource.audiences,
-    demo_actions: resource.simulationActions || [],
+    demo_actions: demoActions,
     description: resource.description,
     availability_note: resource.availabilityNote,
     source_url: resource.sourceUrl,
@@ -2215,7 +2501,20 @@ function publicResource(resource) {
   };
 }
 
-function buildSupportVoiceResponse(resource, timing = 'routine', needs = [], demoEnabled = false) {
+function mesProgrammeSpokenSummary(resource, includePhone = true) {
+  const summaries = {
+    'mes-assessment-centre': 'MES Johannesburg’s Assessment Centre is its first programme entry after outreach for helpdesk assessment, social-work planning, and referral.',
+    'mes-ekhaya-shelter': 'MES Ekhaya is a current named Johannesburg shelter programme.',
+    'mes-ekuthuleni-shelter': 'MES Ekuthuleni is a current named Johannesburg shelter programme.',
+    'mes-impilo-shelter': 'MES Impilo combines shelter with professional health and social support for people living with chronic or advanced illness; it is not a general walk-in clinic.',
+    'mes-grow-programme': 'MES GROW offers job-and-life rehabilitation, coaching, life skills, work readiness, and paid work opportunities where available.'
+  };
+  const summary = summaries[resource?.id] || '';
+  if (!summary || !includePhone) return summary;
+  return `${summary} Call ${resource.phone} to confirm the current entrance, assessment process, schedule, and availability.`;
+}
+
+function buildSupportVoiceResponse(resource, timing = 'routine', needs = [], demoEnabled = false, detailRequested = 'recommendation') {
   const purpose = spokenPurpose(resource, needs);
   const isMesOvernightNeed = resource.id === 'mes-johannesburg-navigation' &&
     timing === 'tonight' &&
@@ -2230,6 +2529,37 @@ function buildSupportVoiceResponse(resource, timing = 'routine', needs = [], dem
   if (resource.routing_mode === 'emergency_phone') {
     return `Call ${resource.phone} now.`;
   }
+  if (detailRequested === 'phone' && resource.phone) {
+    return `The number for ${resource.name} is ${resource.phone}.`;
+  }
+  if (detailRequested === 'hours') {
+    if (resource.id === 'mes-johannesburg-navigation' || mesProgrammeSpokenSummary(resource, false)) {
+      return `I do not have confirmed current public hours for ${resource.name}. Call ${resource.phone} to confirm the right entrance, intake time, and schedule before travelling.`;
+    }
+    const confirmStep = resource.phone ? ` Call ${resource.phone} to confirm before travelling.` : '';
+    return `${resource.name} lists its hours as ${resource.hours}.${confirmStep}`;
+  }
+  if (['address', 'directions'].includes(detailRequested)) {
+    if (resource.address_withheld_for_safety) {
+      return `${resource.name}'s address needs to stay private on this call. Call ${resource.phone} for the safest next step.`;
+    }
+    if (resource.id === 'mes-johannesburg-navigation') {
+      return `MES Johannesburg's published branch contact address is ${resource.address}. Call ${resource.phone} first to confirm the right programme or intake entrance before travelling.`;
+    }
+    if (mesProgrammeSpokenSummary(resource, false) && !resource.address) {
+      return `I do not have a current verified public entrance for ${resource.name}. Call ${resource.phone} to confirm the right entrance before travelling.`;
+    }
+    if (resource.address) {
+      const confirmStep = resource.phone ? ` Call ${resource.phone} before travelling.` : '';
+      return `${resource.name} is at ${resource.address}.${confirmStep}`;
+    }
+  }
+  if (resource.id === 'mes-johannesburg-navigation' && needs.includes('mes_services')) {
+    return `MES Johannesburg includes its Assessment Centre and social work, Ekhaya and Ekuthuleni shelter programmes, Impilo health support, and GROW work readiness. Call ${resource.phone} to confirm the right current entrance and next step.`;
+  }
+  if (needs.includes('mes_services') && mesProgrammeSpokenSummary(resource, false)) {
+    return mesProgrammeSpokenSummary(resource, true);
+  }
   if (resource.address_withheld_for_safety && resource.phone) {
     return `${resource.name} can help with ${purpose} on ${resource.phone}.${timingCaveat}`.trim();
   }
@@ -2237,7 +2567,7 @@ function buildSupportVoiceResponse(resource, timing = 'routine', needs = [], dem
     return `If you are 16 or older, Zlto offers a data-free digital wallet for verified learning, tasks, surveys, and community activity. The official sign-up is at zlto dot mobi.`;
   }
   if (resource.id === 'michange-zlto-mes-pathway') {
-    return `Mi-Change uses Zlto with Johannesburg partners for essential-service vouchers. MES is the first contact on ${resource.phone}.`;
+    return 'Mi-Change uses Zlto with Johannesburg partners for essential-service vouchers delivered through partner pathways such as MES.';
   }
   if (resource.routing_mode === 'phone_only' || resource.routing_mode === 'navigation_only') {
     if (purpose === 'someone to talk to') {
@@ -2267,7 +2597,9 @@ function buildConversationalSupportResponse({
   uncoveredHealthNeeds,
   otherUncoveredNeeds,
   deferredNeeds,
-  daytimeSpaceUnavailableTonight
+  daytimeSpaceUnavailableTonight,
+  coordinationPreference,
+  detailRequested
 }) {
   const first = selected[0];
   const lead = careLead(needs);
@@ -2299,7 +2631,11 @@ function buildConversationalSupportResponse({
   }
 
   const sentences = [lead];
-  if (first) sentences.push(buildSupportVoiceResponse(first, timing, needs, demoEnabled));
+  const supportSentence = first
+    ? buildSupportVoiceResponse(first, timing, needs, demoEnabled, detailRequested)
+    : '';
+  if (supportSentence) sentences.push(supportSentence);
+  const phoneWasSpoken = Boolean(first?.phone && supportSentence.includes(first.phone));
 
   const firstResource = selectedCandidates[0]?.resource;
   const firstCandidate = selectedCandidates[0];
@@ -2321,9 +2657,20 @@ function buildConversationalSupportResponse({
     sentences.push(`I'll come back to ${pending.map(humanSupportNeed).join(' and ')} next.`);
   }
 
+  const explicitCoordinationAction = coordinationPreference === 'appointment_request' && first?.demo_actions.includes('appointment_request')
+    ? 'appointment_request'
+    : coordinationPreference === 'clinician_handoff' && first?.demo_actions.includes('clinician_handoff')
+      ? 'clinician_handoff'
+      : '';
+  const phoneConnectionAvailable = Boolean(
+    demoEnabled && phoneWasSpoken && first?.demo_actions.includes('phone_connection')
+  );
   let awaiting = '';
   let question = '';
-  if (shelterAudienceNeeded) {
+  if (phoneConnectionAvailable || explicitCoordinationAction) {
+    // Complete the caller's chosen or immediately useful connection first.
+    // Any secondary location/audience detail remains in nextNeed for the next turn.
+  } else if (shelterAudienceNeeded) {
     awaiting = 'audience';
     question = 'Are you an adult on your own, an adult with children, or under 18?';
   } else if (specialistLocationNeeded) {
@@ -2344,7 +2691,10 @@ function buildConversationalSupportResponse({
   }
 
   const suggestedDemoAction = !question && demoEnabled && first
-    ? preferredDemoAction(first, needs, timing)
+    ? explicitCoordinationAction ||
+      (phoneWasSpoken && first.demo_actions.includes('phone_connection')
+        ? 'phone_connection'
+        : preferredDemoAction(first, needs, timing, coordinationPreference))
     : '';
   if (!question && suggestedDemoAction) {
     awaiting = 'demo_action_consent';
@@ -2409,6 +2759,7 @@ function spokenPurpose(resource, needs) {
   if (relevant.some((need) => ['food', 'hygiene', 'clothing'].includes(need))) return 'food and practical support';
   if (relevant.includes('substance_use_support')) return 'substance-use support';
   if (relevant.some((need) => ['employment', 'skills_support'].includes(need))) return 'work and skills support';
+  if (relevant.includes('mes_services')) return 'MES programmes and services';
   if (relevant.includes('zlto_rewards')) return 'a Zlto earn-and-learn pathway';
   if (relevant.includes('michange_voucher')) return 'the Mi-Change voucher pathway';
   if (relevant.some((need) => ['grants', 'social_relief', 'financial_support'].includes(need))) return 'grant and social-relief help';
@@ -2417,14 +2768,15 @@ function spokenPurpose(resource, needs) {
   return 'the support you asked for';
 }
 
-function preferredDemoAction(resource, needs, timing) {
+function preferredDemoAction(resource, needs, timing, coordinationPreference = 'none') {
   const actions = new Set(resource.demo_actions || []);
   if (needs.includes('zlto_rewards') && actions.has('reward_signup')) return 'reward_signup';
   if (needs.includes('michange_voucher') && actions.has('voucher_pathway')) return 'voucher_pathway';
   if (needs.some((need) => ['mental_health', 'emotional_support', 'mental_health_crisis', 'suicide_support'].includes(need)) && actions.has('warm_handoff')) return 'warm_handoff';
   if (needs.some((need) => ['shelter_navigation', 'safe_space_navigation', 'women_children_shelter'].includes(need)) && actions.has('intake_request')) return 'intake_request';
   if (needs.some((need) => ['healthcare', 'hospital_care', 'medication'].includes(need))) {
-    if (timing === 'now' && actions.has('clinician_handoff')) return 'clinician_handoff';
+    if (coordinationPreference === 'clinician_handoff' && actions.has('clinician_handoff')) return 'clinician_handoff';
+    if (coordinationPreference === 'appointment_request' && actions.has('appointment_request')) return 'appointment_request';
     if (actions.has('appointment_request')) return 'appointment_request';
     if (actions.has('clinician_handoff')) return 'clinician_handoff';
   }
@@ -2443,6 +2795,7 @@ function demoActionQuestion(action) {
     intake_request: 'Let’s complete the demo intake check now—shall I start?',
     navigator_handoff: 'Let’s complete the demo redirection now—shall I start?',
     warm_handoff: 'Let’s bring up the demo connection now—shall I start?',
+    phone_connection: 'Would you like me to connect you now in the demo?',
     assessment_request: 'Let’s complete the demo assessment now—shall I start?',
     reward_signup: 'Let’s open the demo Zlto reward journey now—shall I start?',
     voucher_pathway: 'Let’s complete the demo voucher pathway check now—shall I start?'
@@ -2483,19 +2836,61 @@ function normalizeSearchText(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function selectCallerStatedLocation(args = {}) {
+  const rawLocation = String(args.location || '').trim();
+  const rawLandmark = String(args.landmark || '').trim();
+  const rawArea = String(args.area || '').trim();
+  const location = normalizeJoziLocation(rawLocation);
+  const landmark = normalizeJoziLocation(rawLandmark);
+  const area = normalizeJoziLocation(rawArea);
+  const broadLocations = new Set(['johannesburg', 'soweto', 'orlando', 'inner city', 'johannesburg cbd']);
+
+  if (landmark === 'orlando' && broadLocations.has(location)) return rawLandmark;
+  if (isUsefulJoziLocation(landmark) && (!isUsefulJoziLocation(location) || broadLocations.has(location))) {
+    return rawLandmark;
+  }
+  if (isUsefulJoziLocation(location)) return rawLocation;
+  if (isUsefulJoziLocation(landmark)) return rawLandmark;
+  if (isUsefulJoziLocation(area)) return rawArea;
+  return rawLocation || rawLandmark || rawArea;
+}
+
 function normalizeJoziLocation(value) {
-  const normalized = normalizeSearchText(value);
-  return normalized
+  let normalized = normalizeSearchText(value);
+  if (!normalized || [
+    'unknown', 'not provided', 'not given', 'unspecified', 'unclear', 'n a', 'na', 'none', 'no location',
+    'not sure', 'dont know', 'do not know', 'location unknown'
+  ].includes(normalized)) return '';
+
+  normalized = normalized
+    .replace(/^(?:i am|im|i m|we are|were|we re)?\s*(?:near|near to|close to|by|around|at|in)\s+(?:the\s+)?/, '')
+    .replace(/\s+(?:in\s+)?(?:johannesburg|joburg|jozi|jhb)$/g, '')
+    .replace(/\s+(?:in\s+)?soweto$/g, '')
     .replace(/^(joburg|jozi|jhb)(?=\s|$)/, 'johannesburg')
     .replace(/\s+/g, ' ')
     .trim();
+
+  const landmarkAliases = {
+    'park station': 'joubert park',
+    'johannesburg park station': 'joubert park',
+    'gautrain park station': 'joubert park',
+    'carlton centre': 'johannesburg cbd',
+    'carlton center': 'johannesburg cbd',
+    'bree taxi rank': 'johannesburg cbd',
+    'mtn taxi rank': 'johannesburg cbd',
+    'constitution hill': 'braamfontein'
+  };
+  if (landmarkAliases[normalized]) return landmarkAliases[normalized];
+  if (['cbd', 'central johannesburg', 'johannesburg central'].includes(normalized)) return 'johannesburg cbd';
+  return normalized;
 }
 
 function isUsefulJoziLocation(value) {
   const normalized = normalizeJoziLocation(value);
   if (!normalized || [
     'johannesburg', 'soweto', 'orlando', 'near me', 'nearby', 'here', 'my area',
-    'east', 'west', 'north', 'south', 'central', 'city', 'town', 'the city', 'downtown'
+    'east', 'west', 'north', 'south', 'central', 'city', 'town', 'the city', 'downtown',
+    'park', 'station', 'street', 'road', 'centre', 'center'
   ].includes(normalized)) return false;
   return normalized.length >= 3;
 }

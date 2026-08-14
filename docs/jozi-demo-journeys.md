@@ -1,4 +1,4 @@
-# Jozi support demo journeys
+# Jozi My Jozi support demo journeys
 
 These journeys are designed for a knowledgeable Johannesburg homelessness and social-support audience. The line acts as a voice doorway into existing services, then completes one clearly labelled simulated request, booking, check, or connection so the audience can see the future workflow.
 
@@ -10,10 +10,11 @@ These journeys are designed for a knowledgeable Johannesburg homelessness and so
 - The line does not lead with a disclaimer or a negative statement. It recommends one caring next step and asks to complete one simulated action.
 - At the moment it completes that action, it names the positive demo outcome first and then says plainly that the demonstration is not connected to the external service.
 - Emergency journeys are the exception: the line gives real emergency numbers immediately and never simulates dispatching an ambulance, police officer, or crisis responder.
+- The voice model interprets ordinary conversation, remembers details from earlier turns, and asks a natural follow-up only when a missing fact genuinely changes the safest next step. Organisation names, numbers, addresses, and hours still come only from the verified directory.
 
 ## Common opening
 
-**Agent:** “Hello, you’ve reached the Jozi support demo line. I’m here to help. What would help most right now?”
+**Agent:** “Hello, you’ve reached the Jozi My Jozi support demo line. I’m here to help. What would help most right now?”
 
 The line asks only what changes the route: immediate danger or medical red flags, nearest suburb or landmark, adult/child/family, relevant mobility or access needs, and whether it is safe to speak or share an address. It never needs an exact sleeping location.
 
@@ -26,12 +27,13 @@ The line asks only what changes the route: immediate danger or medical red flags
 1. Ask one safety question: “Are you in immediate danger, badly hurt, or feeling that you may harm yourself?”
 2. Ask whether the caller is an adult alone, with children, or has a mobility/access need.
 3. For an adult with no immediate danger, recommend **MES Johannesburg** as one step that can cover the shelter assessment and food-support request. Give the phone number immediately; keep the address for later or for a caller who asks for it.
-4. Say: “Okay, let’s sort out tonight first, then your practical needs. MES Johannesburg is the best first place to try for shelter assessment and food support. Call 011 725 6531. Let’s complete the demo intake check now—shall I start?”
-5. Pause. If the caller agrees, run the demo intake action. Give directions afterward only if useful, one detail at a time. Do not require an app, data, or text.
+4. Say: “Okay, let’s sort out tonight first, then your practical needs. MES Johannesburg is the best first place to try for shelter assessment and food support. Call 011 725 6531. Would you like me to connect you now in the demo?”
+5. Pause. If the caller agrees, run the demo phone-connection action. Give directions afterward only if useful, one detail at a time. Do not require an app, data, or text.
+6. Keep City services as a last resort. For an eligible inner-city adult, MES remains first even if the caller naturally says “social support,” “safe tonight,” or “food help.”
 
-**Demo coordination:** run an `intake_request` only after the caller agrees to MES.
+**Demo coordination:** because the line spoke the number, run `phone_connection` only after the caller agrees to MES. If the caller explicitly asks to submit an intake request instead, use the simulated `intake_request`.
 
-**Agent:** “All set—the demo now shows the intake check with MES Johannesburg as complete. MES was not contacted, so no real request was sent and no place or meal was reserved.”
+**Agent:** “Stay with me—the demo connection screen for MES Johannesburg is ready. No call or transfer has been placed, and nobody is connected.”
 
 ## Journey 2 — “I need someone to talk to”
 
@@ -67,7 +69,7 @@ The line asks only what changes the route: immediate danger or medical red flags
 
 **Expected flow:**
 
-1. Clarify that the caller means a daytime public venue, not danger now or an overnight space.
+1. Understand natural phrases such as “daytime community service,” “community centre,” “somewhere public to sit,” or “somewhere less isolated” as a daytime public venue. Clarify danger or an overnight need only if the caller’s words make that ambiguous.
 2. Near Hillbrow, return **Hillbrow Recreation Centre**, corner Clarendon and Pretoria Streets, **011 643 2675**.
 3. In the CBD, return **Johannesburg City Library**, Beyers Naudé Square, **011 407 7703** or **061 438 0153**.
 4. In Orlando, return **Orlando East Library**, 6544 Mooki Street, **011 935 1040**.
@@ -83,10 +85,13 @@ The line asks only what changes the route: immediate danger or medical red flags
 
 1. Screen briefly for severe breathlessness, chest pain, coughing blood, confusion, or another emergency.
 2. For routine care, return **Hillbrow Community Health Centre**, corner Smit and Klein Streets, **011 694 3775**. The directory retains the other published contacts for operator review, but the voice response stays short.
-3. Explain that routine hours are listed as Monday–Friday, 07:30–16:00, while emergency and victim-friendly services are separately listed as 24 hours.
-4. Do not route to Esselen Street Clinic, which the current City page marks temporarily closed. Do not route to Joubert Park Clinic until its conflicting operational status is resolved.
+3. Remember “Joubert Park” and the clinic need after the red-flag question. The caller must not have to repeat either detail.
+4. Explain that routine hours are listed as Monday–Friday, 07:30–16:00, while emergency and victim-friendly services are separately listed as 24 hours.
+5. Do not route to Esselen Street Clinic, which the current City page marks temporarily closed. Do not route to Joubert Park Clinic until its conflicting operational status is resolved.
 
 **Demo appointment:**
+
+The default after speaking the clinic number is: “Would you like me to connect you now in the demo?” If the caller explicitly asks to book instead, use the simulated appointment flow below.
 
 **Agent:** “All set—the demo now shows your appointment at Hillbrow Community Health Centre booked for tomorrow at 10 AM. The clinic was not contacted, so no real appointment is booked.”
 
@@ -221,18 +226,19 @@ This is a feature, not a directory gap: suppressed sites remain recorded with th
 
 **Demo coordination:** show one simulated intake check after the caller chooses the home or the City social-worker route.
 
-## Journey 15 — routine social support after offices close
+## Journey 15 — broad social-support request after offices close
 
 **Caller:** “I am in Soweto and need social support now, but it is evening.”
 
 **Expected flow:**
 
 1. First distinguish an emergency, a need for somewhere safe tonight, and a routine social-service need.
-2. For routine navigation, return **City of Johannesburg General Services, 0860 562 874**, which is published as a 24-hour line; do not send the caller to a closed Region D office as though it is open.
-3. For shelter navigation, explain that City placement follows social-worker assessment and referral. Provide the Region D route for office-hours follow-up without promising a bed.
-4. For immediate danger, severe illness, violence, overdose, or imminent self-harm, switch to the emergency route rather than keeping the caller in social-service navigation.
+2. “Social support” is too broad for a useful destination. Ask one caring question about what would help—somewhere safe, food, health, someone to talk to, documents, or work—and carry the answer into the next lookup.
+3. Prefer an appropriate partner or specialist service. Do not default to the City merely because its general line is published as 24 hours.
+4. Use **City of Johannesburg General Services, 0860 562 874** only when no suitable verified partner or specialist route matches, the caller specifically asks for City services, or a City function is the actual need.
+5. For immediate danger, severe illness, violence, overdose, or imminent self-harm, switch to the emergency route rather than keeping the caller in social-service navigation.
 
-**Demo coordination:** for a routine need, show a simulated City redirection. Do not simulate emergency dispatch.
+**Demo coordination:** show one simulated redirection to the chosen relevant service. Do not simulate emergency dispatch.
 
 ## Journey 16 — Zlto earn-and-learn rewards
 
@@ -269,6 +275,38 @@ This is a feature, not a directory gap: suppressed sites remain recorded with th
 
 **Agent:** “All set—the demo Mi-Change and Zlto partner check is ready. MES and Zlto were not contacted, and no voucher, reward, meal, shower, shelter place, or service booking was created.”
 
+## Journey 18 — “What does MES actually offer?”
+
+**Caller:** “What MES services and locations can you help me with?”
+
+**Expected flow:**
+
+1. Start with the current published **MES Johannesburg branch contact: 011 725 6531, 16 Kapteijn Street, Hillbrow**. Explain that callers should use the number to confirm the correct current programme entrance before travelling.
+2. Explain one relevant programme at a time rather than reading a catalogue:
+   - **Assessment Centre and social work**: first programme entry after outreach for helpdesk assessment, care planning, documentation, family support, and referral into the right MES or partner service. Current public entrance and hours must be confirmed by phone.
+   - **Ekhaya** and **Ekuthuleni**: current named MES Johannesburg shelter programmes. Admission, capacity, fees, meals, hours, and the current public entrance must be confirmed by MES.
+   - **Impilo Shelter and Health Support**, **353 Main Street, Fairview**: shelter plus professional health and social support; it is not a general walk-in clinic and requires a call first.
+   - **GROW**: job-and-life rehabilitation, coaching, work readiness, job-search support, and paid work opportunities where available. Assessment, schedule, entrance, and places must be confirmed by MES.
+   - MES also publishes youth and family support, food and social relief, public-health referrals, skills support, documentation, and family reunification pathways.
+3. Never present **16 Kapteijn Street** as a guaranteed shelter or Assessment Centre entrance. Never use older direct shelter numbers as current contacts; use **011 725 6531**.
+4. Keep **Othandweni** and **Linatex** out of live routing: Othandweni is described as being developed, and Linatex is absent from the current 2025 Johannesburg programme list.
+
+**Demo coordination:** after the caller chooses a relevant MES programme, show one simulated intake, availability, assessment, or redirection step. No request is actually sent.
+
+## Journey 19 — trouble sleeping without assuming a home
+
+**Caller:** “I am having trouble sleeping.”
+
+**Expected flow:**
+
+1. Do not suggest a hot shower, private bedroom, quiet house, refrigerator, paid product, data, or transport. The caller may be sleeping rough, in a shelter, or in shared accommodation.
+2. Ask one neutral question first: “Do you have somewhere reasonably safe and sheltered to rest tonight?”
+3. If no, check immediate danger and handle the safe-place need before ordinary sleep advice. Reuse any area or landmark already stated and use the MES-first pathway for an eligible inner-city adult.
+4. If yes, continue one question at a time about duration, distress, pain, breathing, medicines or substances when relevant, and tailor low-resource advice to what the caller actually has.
+5. If a clinic or mental-health line is the next step, use a verified destination. When its phone number is spoken, offer to connect now in the demo.
+
+**Pass condition:** the line never assumes housing or facilities, never gives “take a hot shower” as context-free advice, and remains caring rather than clinical or bureaucratic.
+
 ## One-action demo rule
 
 Every non-emergency journey ends with exactly one caller-approved simulation:
@@ -276,7 +314,8 @@ Every non-emergency journey ends with exactly one caller-approved simulation:
 | Need | One simulated action |
 |---|---|
 | Shelter, food, older-person accommodation | Intake or availability check |
-| Routine clinic | Appointment request or doctor-connection screen |
+| Any spoken non-emergency phone number | Phone-connection screen, unless the caller explicitly chose another supported action |
+| Routine clinic without a spoken number, or explicit caller choice | Appointment request or doctor-connection screen |
 | Mental health, GBV, Childline | Connection screen |
 | Substance-use support | Assessment request |
 | Daytime space, grants, documents, work, legal support | Redirection or appointment |
@@ -287,13 +326,13 @@ The line completes the demo action positively, then immediately distinguishes th
 
 ## Five-minute recommended sequence
 
-1. Journey 1: adult near Joubert Park seeking safety and food; demonstrate MES and a simulated intake check.
+1. Journey 1: adult near Joubert Park seeking safety and food; demonstrate MES and a simulated phone connection.
 2. Journey 2: routine emotional distress; demonstrate SADAG and a simulated warm handoff.
-3. Journey 5: clinic need; demonstrate a simulated appointment or doctor-joining state.
+3. Journey 5: clinic need; demonstrate the default phone connection, then the appointment variant only if the caller asks for it.
 4. Journey 16: demonstrate the Zlto data-free earn-and-learn journey.
 5. Journey 17: demonstrate the Mi-Change/Zlto partner voucher pathway through MES.
 6. Journey 3: add “I have tablets and will take them now”; show immediate Joburg emergency escalation, with 112 first only if the caller is on a mobile phone.
-5. Journey 6: say the phone is shared; show address withholding and zero outbound messaging.
+7. Journey 6: say the phone is shared; show address withholding and zero outbound messaging.
 
 ## Pre-demo check
 

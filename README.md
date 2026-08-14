@@ -272,8 +272,11 @@ If the lookup is slow, unavailable, or the location is too vague, the tool retur
 
 In Jozi and combined modes:
 
-- Every tool-returned Johannesburg destination comes from the deterministic directory in `src/jozi-support.js`; model-generated provider lookup tools are not exposed in these modes.
+- The Realtime voice model leads the conversation: it interprets natural language, remembers stated symptoms and landmarks across turns, and translates them into support needs without making callers learn a taxonomy. Every organisation name, number, address, and hour still comes from the verified directory in `src/jozi-support.js`; model-generated destination facts are not allowed.
 - The directory covers homelessness and shelter navigation, mental health, social support, women and children, food and hygiene navigation, daytime civic spaces, clinics and hospitals, substance-use support, GBV, child safety, grants, documents, work, Zlto and Mi-Change partner pathways, and legal help across the inner city and Soweto.
+- Eligible inner-city homelessness and practical-support calls are MES-first as the Jozi My Jozi partner pathway. City social-service navigation is fallback-only. The directory includes the current MES branch contact plus current named Assessment Centre, Ekhaya, Ekuthuleni, Impilo, and GROW programmes, with call-first caveats wherever a current public entrance or live access has not been confirmed.
+- Health guidance is housing-aware: it never assumes a private home, bed, bathroom, hot water, electricity, data, transport, or money. A sleep concern begins with one neutral question about whether the caller has somewhere reasonably safe and sheltered to rest.
+- Whenever an ordinary response speaks a non-emergency phone number, the next question offers a caller-approved demo connection. Emergency calls remain real-number-first and never simulate dispatch.
 - Each result includes its primary source, source-check date, access type, audience, operating-status caveat, and `availability_confirmed: false`.
 - Known closed, moving, or conflicting destinations are explicitly suppressed rather than silently omitted.
 - Immediate danger, medical emergencies, imminent self-harm, overdose, violence, and fire use deterministic emergency routes before ordinary lookup.
