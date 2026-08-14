@@ -2285,7 +2285,11 @@ export function mergeJoziSupportContext(previous = {}, current = {}) {
   const priorTurnNeeds = Array.isArray(previous.prior_needs)
     ? previous.prior_needs.flatMap(expandSupportCategory)
     : normalizedPreviousNeeds;
-  const continueSinglePendingNeed = Boolean(continuationNeed) && (
+  const callerIsAskingForCurrentRouteDetail = Boolean(
+    current.detail_requested || current.detailRequested ||
+    current.coordination_preference || current.coordinationPreference
+  );
+  const continueSinglePendingNeed = Boolean(continuationNeed) && !callerIsAskingForCurrentRouteDetail && (
     currentNeedValues.length === 0 ||
     (normalizedCurrentNeeds.includes(continuationNeed) &&
       normalizedCurrentNeeds.every((need) => priorTurnNeeds.includes(need)))
@@ -2330,7 +2334,10 @@ export function buildJoziPendingLookupContext(args = {}, result = {}) {
     'contact_mode',
     'city_fallback_consent'
   ]);
-  if (!clarificationAwaits.has(result.awaiting)) return {};
+  const progressiveContinuation = Boolean(result.next_need) &&
+    ['demo_action_consent', 'detail_preference'].includes(result.awaiting);
+  if (!clarificationAwaits.has(result.awaiting) && !progressiveContinuation) return {};
+  const continueWithNextNeed = result.awaiting === 'support_need' || progressiveContinuation;
   return {
     location: args.location || result.location || '',
     landmark: args.landmark || '',
@@ -2340,9 +2347,9 @@ export function buildJoziPendingLookupContext(args = {}, result = {}) {
     phone_type: args.phone_type || 'unknown',
     safe_to_speak: args.safe_to_speak || args.safeToSpeak || 'unknown',
     safe_site_type: args.safe_site_type || args.safeSiteType || '',
-    continuation_need: result.awaiting === 'support_need' ? result.next_need || '' : '',
+    continuation_need: continueWithNextNeed ? result.next_need || '' : '',
     prior_needs: Array.isArray(result.needs) ? result.needs : normalizeNeeds(args),
-    needs: result.awaiting === 'support_need' && result.next_need
+    needs: continueWithNextNeed && result.next_need
       ? [result.next_need]
       : Array.isArray(result.needs) ? result.needs : normalizeNeeds(args)
   };

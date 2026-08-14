@@ -554,3 +554,62 @@ test('urgent safety routing remains immediate and is exempt from routine City co
     assertNoRoutineCity(result, label);
   }
 });
+
+test('demo actions retain and advance the next unresolved need instead of replaying the first route', () => {
+  const cases = [
+    {
+      label: 'crisis then family shelter',
+      query: {
+        needs: ['mental_health_crisis', 'women_children_shelter'],
+        location: 'Orlando East',
+        audience: 'family',
+        safe_to_speak: 'yes'
+      },
+      first: 'sadag-suicide-crisis',
+      nextNeed: 'women_children_shelter',
+      secondAwaiting: 'city_fallback_consent'
+    },
+    {
+      label: 'child safety then GBV healthcare',
+      query: {
+        needs: ['shelter_navigation', 'gbv_healthcare'],
+        location: 'Hillbrow',
+        audience: 'child',
+        safe_to_speak: 'yes'
+      },
+      first: 'childline-116',
+      nextNeed: 'gbv_healthcare',
+      second: 'hillbrow-clinical-forensic-medical-service'
+    },
+    {
+      label: 'crisis then MES safe-space route',
+      query: {
+        needs: ['safe_space_navigation', 'mental_health_crisis'],
+        location: 'Joubert Park',
+        audience: 'adult',
+        timing: 'tonight'
+      },
+      first: 'sadag-suicide-crisis',
+      nextNeed: 'safe_space_navigation',
+      second: 'mes-johannesburg-navigation'
+    }
+  ];
+
+  for (const entry of cases) {
+    const query = { ...entry.query, safety_context: 'none', demo_enabled: true };
+    const first = resolveJoziSupport(query);
+    assert.equal(first.spoken_option_ids[0], entry.first, entry.label);
+    assert.equal(first.awaiting, 'demo_action_consent', entry.label);
+    assert.equal(first.next_need, entry.nextNeed, entry.label);
+
+    const pending = buildJoziPendingLookupContext(query, first);
+    assert.equal(pending.continuation_need, entry.nextNeed, entry.label);
+    const replayed = mergeJoziSupportContext(pending, query);
+    assert.deepEqual(replayed.needs, [entry.nextNeed], entry.label);
+
+    const second = resolveJoziSupport(replayed);
+    if (entry.second) assert.equal(second.spoken_option_ids[0], entry.second, entry.label);
+    if (entry.secondAwaiting) assert.equal(second.awaiting, entry.secondAwaiting, entry.label);
+    assert.notEqual(second.spoken_option_ids[0], entry.first, entry.label);
+  }
+});
