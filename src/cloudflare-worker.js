@@ -44,6 +44,7 @@ import {
   voiceApiForIncomingEvent,
   voiceSessionId
 } from './openai-voice-api.js';
+import { sanitizeProviderLookupArgs } from './provider-lookup.js';
 
 const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2';
 const DEFAULT_SUMMARY_MODEL = 'gpt-5.5';
@@ -185,6 +186,7 @@ const SELFCARE_INSTRUCTIONS = `You are the Self Care companion — the voice ent
 ## MEDICAL JUDGMENT AND NEARBY CARE
 - Use broad medical knowledge to reason from the caller's symptoms, history, medicines, age, pregnancy context, and red flags. Do not merely match keywords or follow a fixed symptom script.
 - Decide whether the safest next step is home self-care, routine care, prompt clinical review, or emergency help. Explain the reasoning briefly in plain language without diagnosing or prescribing.
+- When you call health_assessment, always include a concise medical_content explanation and a concrete next_step so the caller hears useful guidance rather than an administrative confirmation.
 - If the caller asks for nearby care, or your assessment indicates in-person care, ask once for the most specific city, neighbourhood, landmark, or address they can give. Then call resolve_providers once with the care need, provider type, and urgency.
 - Recommend the single most suitable returned option first, with its name and address, and say it is a model-assisted demo suggestion that must be confirmed before travel. Offer another returned option only if the caller wants one. Never invent a provider, telephone number, hours, distance, availability, or capacity outside the tool result.
 
@@ -219,6 +221,7 @@ This line can open the caller's record in the clinical system. It is a demonstra
 
 const SELFCARE_ACTION_RESPONSE_INSTRUCTIONS = [
   "Answer in one or two short spoken sentences, warm and calm, in the caller's language.",
+  'For health_assessment, speak its voiceResponse as the concise medical explanation and next step. Never reduce the answer to only "Assessment recorded."',
   'For a successful provider lookup, use only voiceResponse and selected for factual details. Give that one option first with its name and address, clearly call it an unverified demo suggestion, say to confirm before travel, and offer another option or a simulated appointment or clinician handoff. Do not read the options list.',
   'If provider lookup needs a more specific location, times out, or returns no option, ask its one short location question and wait. Never retry without a new caller detail.',
   'For a demo coordination result, lead with its completed demo state, then say its one truthful sentence explaining that no live clinic, clinician, or care team was contacted.',
@@ -973,7 +976,9 @@ export class CallSession extends DurableObject {
               severity: args.severity || 'informational',
               voiceResponse: modeIncludesJozi(serviceMode)
                 ? `${spokenAssessment || 'I have enough information to explain the safest next step.'} This app will not keep the call details after the call ends.`
-                : 'Assessment recorded.'
+                : serviceMode === 'selfcare'
+                  ? spokenAssessment || 'I have recorded what you shared. Let us take the safest next step.'
+                  : 'Assessment recorded.'
             };
             this.addMessage('system', `Health assessment: ${JSON.stringify(args)}`);
             if (serviceMode === 'selfcare') {
@@ -1047,7 +1052,10 @@ export class CallSession extends DurableObject {
         case 'find_clinic':
         case 'find_clinics':
         case 'resolve_providers':
-          result = await resolveProviderOptions(this.env, args);
+          result = await resolveProviderOptions(
+            this.env,
+            sanitizeProviderLookupArgs(toolName, args)
+          );
           this.addMessage('system', `Provider options resolved: ${JSON.stringify(result)}`);
           break;
 

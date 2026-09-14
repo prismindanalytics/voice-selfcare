@@ -9,6 +9,7 @@ import {
   serviceModeForTwilioVoicePath,
   twilioLineBindingMatches
 } from '../src/line-routing.js';
+import { sanitizeProviderLookupArgs } from '../src/provider-lookup.js';
 import {
   buildServiceGreeting,
   modeIncludesJozi,
@@ -117,6 +118,7 @@ test('selfcare uses medical judgment and can resolve nearby care after location'
   const source = readFileSync(fileURLToPath(new URL('../src/cloudflare-worker.js', import.meta.url)), 'utf8');
   assert.match(source, /## MEDICAL JUDGMENT AND NEARBY CARE/);
   assert.match(source, /Use broad medical knowledge to reason from the caller's symptoms/);
+  assert.match(source, /always include a concise medical_content explanation and a concrete next_step/);
   assert.match(source, /call resolve_providers once/);
   assert.match(source, /single most suitable returned option first/);
   assert.match(source, /use only voiceResponse and selected for factual details/i);
@@ -127,4 +129,34 @@ test('selfcare uses medical judgment and can resolve nearby care after location'
     source.match(/if \(normalized === 'selfcare'\) return \[[^\n]+/)?.[0] || '',
     /find_clinics|book_slot|send_referral|request_commodities|request_test/
   );
+});
+
+test('selfcare assessment returns its medical explanation and next step for speech', () => {
+  const source = readFileSync(fileURLToPath(new URL('../src/cloudflare-worker.js', import.meta.url)), 'utf8');
+  const assessmentHandler = source.slice(
+    source.indexOf("case 'health_assessment':"),
+    source.indexOf("case 'eka_find_patient':")
+  );
+  assert.match(assessmentHandler, /const spokenAssessment = \[medicalContent, nextStep\]/);
+  assert.match(assessmentHandler, /serviceMode === 'selfcare'/);
+  assert.match(assessmentHandler, /\? spokenAssessment \|\| 'I have recorded what you shared/);
+});
+
+test('resolve_providers ignores model-injected provider facts before bounded lookup', () => {
+  const input = {
+    location: 'Hillbrow',
+    need: 'primary care',
+    provider_type: 'clinic',
+    urgency: 'soon',
+    options: [{ name: 'Invented Clinic', address: 'Invented Street' }],
+    provider_name: 'Invented Clinic',
+    live_availability: true
+  };
+  assert.deepEqual(sanitizeProviderLookupArgs('resolve_providers', input), {
+    location: 'Hillbrow',
+    need: 'primary care',
+    provider_type: 'clinic',
+    urgency: 'soon'
+  });
+  assert.deepEqual(sanitizeProviderLookupArgs('find_clinics', input), input);
 });
