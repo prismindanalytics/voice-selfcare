@@ -133,11 +133,11 @@ test('Live greeting and tool continuation use Live commands, never Realtime conv
     delegation_id: null,
     content: 'Speak first now in English. Say exactly: "Hello, how can I help?" Then pause and listen for the caller.'
   });
-  assert.deepEqual(liveGreetingStartEvent('greeting_start_1'), {
+  assert.deepEqual(liveGreetingStartEvent('Hello, how can I help?', 'greeting_start_1'), {
     type: 'session.commentary.append',
     event_id: 'greeting_start_1',
     delegation_id: null,
-    content: 'Begin the conversation now, following the instructions provided.'
+    content: 'Hello, how can I help?'
   });
 
   const [result, continuation] = liveToolResultEvents('call_1', { success: true }, 'dlg-1');
@@ -237,7 +237,7 @@ test('production config maps 206 to selfcare, 425 to Jozi, and disables the lega
   assert.match(workerSource, /isReflectedLiveAudioEvent\(message\)/);
 });
 
-test('Live greeting is kicked off only after its instruction acknowledgment', () => {
+test('Live greeting starts after its instruction acknowledgment with a bounded silence fallback', () => {
   const ackHandler = workerSource.slice(
     workerSource.indexOf("if (message.type === 'session.instructions.appended')"),
     workerSource.indexOf("if (message.type === 'session.commentary.appended')")
@@ -250,8 +250,10 @@ test('Live greeting is kicked off only after its instruction acknowledgment', ()
   assert.match(ackHandler, /acknowledgedId === this\.getMeta\('greeting_event_id'\)/);
   assert.match(ackHandler, /this\.sendLiveGreetingStart\(\)/);
   assert.match(starter, /if \(this\.getMeta\('greeting_commentary_event_id'\)\) return/);
-  assert.match(starter, /liveGreetingStartEvent\(eventId\)/);
+  assert.match(starter, /liveGreetingStartEvent\(greeting, eventId\)/);
   assert.match(workerSource, /message\.type === 'session\.commentary\.appended'/);
+  assert.match(workerSource, /greeting_ack_timeout_at/);
+  assert.match(workerSource, /}, 1200\)/);
 });
 
 test('Twilio and SignalWire SIP TwiML never emits the unsupported codecs attribute', () => {

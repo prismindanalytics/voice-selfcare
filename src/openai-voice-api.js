@@ -104,12 +104,12 @@ export function liveGreetingEvent(greeting, eventId) {
   };
 }
 
-export function liveGreetingStartEvent(eventId) {
+export function liveGreetingStartEvent(greeting, eventId) {
   return {
     type: 'session.commentary.append',
     event_id: String(eventId || 'opening_greeting_start'),
     delegation_id: null,
-    content: 'Begin the conversation now, following the instructions provided.'
+    content: String(greeting || 'Hello. How can I help you today?')
   };
 }
 

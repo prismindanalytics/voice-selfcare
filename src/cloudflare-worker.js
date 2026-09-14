@@ -924,8 +924,10 @@ export class CallSession extends DurableObject {
         message.client_event_id || message.error?.client_event_id || message.error?.event_id || ''
       );
       if (failedEventId && failedEventId === this.getMeta('greeting_event_id') &&
+          !this.getMeta('greeting_commentary_event_id') &&
           Number(this.getMeta('greeting_retry_count') || 0) < 1) {
         this.setMeta('greeting_retry_count', '1');
+        this.deleteMeta('greeting_event_id');
         this.initialResponseSent = false;
         this.sendInitialResponse();
       } else if (failedEventId && failedEventId === this.getMeta('greeting_commentary_event_id') &&
@@ -1902,13 +1904,18 @@ export class CallSession extends DurableObject {
 
   sendInitialResponse() {
     if (this.initialResponseSent) return;
-    const greeting = buildServiceGreeting(
-      this.getMeta('service_mode') || configuredServiceMode(this.env),
-      joziDemoEnabled(this.env)
-    );
     const voiceApi = normalizeOpenAIVoiceApi(
       this.getMeta('voice_api'),
       configuredOpenAIVoiceApi(this.env)
+    );
+    if (voiceApi === 'live' && this.getMeta('greeting_event_id')) {
+      this.initialResponseSent = true;
+      if (!this.getMeta('greeting_commentary_event_id')) this.sendLiveGreetingStart();
+      return;
+    }
+    const greeting = buildServiceGreeting(
+      this.getMeta('service_mode') || configuredServiceMode(this.env),
+      joziDemoEnabled(this.env)
     );
     const greetingEventId = voiceApi === 'live' ? generateId('GREETING') : '';
     const sent = voiceApi === 'live'
@@ -1926,13 +1933,25 @@ export class CallSession extends DurableObject {
       this.setMeta('initial_response_sent_at', new Date().toISOString());
       this.setMeta('last_stage', 'initial_response_requested');
       console.log(`[${voiceApi === 'live' ? 'Live' : 'Realtime'}] initial response requested`);
+      if (voiceApi === 'live') {
+        setTimeout(() => {
+          if (this.getMeta('terminal_at') || this.getMeta('completed_at') ||
+              this.getMeta('greeting_commentary_event_id')) return;
+          this.setMeta('greeting_ack_timeout_at', new Date().toISOString());
+          this.sendLiveGreetingStart();
+        }, 1200);
+      }
     }
   }
 
   sendLiveGreetingStart() {
     if (this.getMeta('greeting_commentary_event_id')) return;
     const eventId = generateId('GREETING_START');
-    if (!this.sendRealtime(liveGreetingStartEvent(eventId))) return;
+    const greeting = buildServiceGreeting(
+      this.getMeta('service_mode') || configuredServiceMode(this.env),
+      joziDemoEnabled(this.env)
+    );
+    if (!this.sendRealtime(liveGreetingStartEvent(greeting, eventId))) return;
     this.setMeta('greeting_commentary_event_id', eventId);
     this.setMeta('greeting_commentary_sent_at', new Date().toISOString());
     this.setMeta('last_stage', 'initial_response_start_requested');
