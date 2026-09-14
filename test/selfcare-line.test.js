@@ -77,9 +77,9 @@ test('every fail-closed service-mode allowlist in the worker admits selfcare', (
   }
 });
 
-test('the selfcare greeting is Singular Care in both demo languages', () => {
+test('the selfcare greeting is Self Care in both demo languages', () => {
   const greeting = buildServiceGreeting('selfcare');
-  assert.match(greeting, /Singular Care/);
+  assert.match(greeting, /Self Care/);
   assert.match(greeting, /portugu/i);
   // and the untouched lines still greet exactly as before
   assert.match(buildServiceGreeting('health'), /health advisor/);

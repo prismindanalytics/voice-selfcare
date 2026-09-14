@@ -13,6 +13,7 @@ import {
   isReflectedLiveAudioEvent,
   liveFunctionCall,
   liveGreetingEvent,
+  liveGreetingStartEvent,
   liveToolResultEvents,
   liveTranscriptDelta,
   markLiveOfferSpoken,
@@ -132,6 +133,12 @@ test('Live greeting and tool continuation use Live commands, never Realtime conv
     delegation_id: null,
     content: 'Speak first now in English. Say exactly: "Hello, how can I help?" Then pause and listen for the caller.'
   });
+  assert.deepEqual(liveGreetingStartEvent('greeting_start_1'), {
+    type: 'session.commentary.append',
+    event_id: 'greeting_start_1',
+    delegation_id: null,
+    content: 'Begin the conversation now, following the instructions provided.'
+  });
 
   const [result, continuation] = liveToolResultEvents('call_1', { success: true }, 'dlg-1');
   assert.equal(result.type, 'response.item.create');
@@ -228,6 +235,29 @@ test('production config maps 206 to selfcare, 425 to Jozi, and disables the lega
   assert.match(workerSource, /serviceMode === 'health' && !healthLineEnabled\(env\)/);
   assert.match(workerSource, /secureMedia: configuredOpenAIVoiceApi\(env\) === 'live'/);
   assert.match(workerSource, /isReflectedLiveAudioEvent\(message\)/);
+});
+
+test('Live greeting is kicked off only after its instruction acknowledgment', () => {
+  const ackHandler = workerSource.slice(
+    workerSource.indexOf("if (message.type === 'session.instructions.appended')"),
+    workerSource.indexOf("if (message.type === 'session.commentary.appended')")
+  );
+  const starter = workerSource.slice(
+    workerSource.indexOf('  sendLiveGreetingStart()'),
+    workerSource.indexOf('  setMeta(key, value)')
+  );
+
+  assert.match(ackHandler, /acknowledgedId === this\.getMeta\('greeting_event_id'\)/);
+  assert.match(ackHandler, /this\.sendLiveGreetingStart\(\)/);
+  assert.match(starter, /if \(this\.getMeta\('greeting_commentary_event_id'\)\) return/);
+  assert.match(starter, /liveGreetingStartEvent\(eventId\)/);
+  assert.match(workerSource, /message\.type === 'session\.commentary\.appended'/);
+});
+
+test('Twilio and SignalWire SIP TwiML never emits the unsupported codecs attribute', () => {
+  assert.doesNotMatch(workerSource, /<Sip[^>]*\bcodecs=/i);
+  assert.doesNotMatch(workerSource, /codecsAttr/);
+  assert.match(workerSource, /<Sip statusCallback=/);
 });
 
 test('Jozi Live frontend—not only the backend—carries the caring South African delivery', () => {

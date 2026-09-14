@@ -57,7 +57,7 @@
     "OPENAI_LIVE_FINALIZE_DRAIN_MS": "1500",
     "PROVIDER_LOOKUP_TIMEOUT_MS": "2500",
     "SERVICE_MODE": "health",
-    // The legacy /health path is intentionally off. +1 206 is Singular Care and +1 425 is Jozi.
+    // The legacy /health path is intentionally off. +1 206 is Self Care and +1 425 is Jozi.
     "HEALTH_LINE_ENABLED": "false",
     "JOZI_LINE_ENABLED": "true",
     "HEALTH_PHONE_NUMBER": "+12063098528",

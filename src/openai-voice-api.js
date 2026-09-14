@@ -104,6 +104,15 @@ export function liveGreetingEvent(greeting, eventId) {
   };
 }
 
+export function liveGreetingStartEvent(eventId) {
+  return {
+    type: 'session.commentary.append',
+    event_id: String(eventId || 'opening_greeting_start'),
+    delegation_id: null,
+    content: 'Begin the conversation now, following the instructions provided.'
+  };
+}
+
 export function liveTranscriptDelta(message) {
   const role = message?.type === 'session.input_transcript.delta'
     ? 'patient'

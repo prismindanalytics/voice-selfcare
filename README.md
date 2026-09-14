@@ -110,7 +110,7 @@ Configure provider webhooks to point at your Cloudflare URL:
 | Provider | URL |
 |---|---|
 | OpenAI SIP | `https://your-cloudflare-url/openai/webhook` |
-| Twilio Singular Care voice | `https://your-cloudflare-url/twilio/voice/selfcare` |
+| Twilio Self Care voice | `https://your-cloudflare-url/twilio/voice/selfcare` |
 | Twilio Jozi voice | `https://your-cloudflare-url/twilio/voice/jozi` |
 | Twilio call status | `https://your-cloudflare-url/twilio/status` |
 | SignalWire voice | `https://your-cloudflare-url/signalwire/voice` |
@@ -266,7 +266,7 @@ Pickup and testing tools can resolve nearby provider options on the backend. The
 
 If the lookup is slow, unavailable, or the location is too vague, the tool returns a fast fallback asking for one more precise location detail. It should not leave the caller waiting in silence.
 
-## Singular Care and Jozi line profiles
+## Self Care and Jozi line profiles
 
 The production assignment is `+1 206 309 8528` → `/twilio/voice/selfcare` and `+1 425 517 3281` → `/twilio/voice/jozi`. `HEALTH_LINE_ENABLED=false` retires the old `/twilio/voice/health` route without deleting its rollback code. Every path verifies Twilio's URL-bound signature and requires the signed destination number to match the configured line before storing a short-lived call profile. The signed OpenAI webhook then requires that exact profile instead of falling back to another assistant.
 
@@ -284,7 +284,7 @@ In Jozi and combined modes:
 - The Worker disables caller memory, automatic SMS/WhatsApp, application-level raw transcript retention, and the global last-caller phone fallback. Minimal call records omit the phone and raw messages and expire after `JOZI_TRANSCRIPT_TTL_DAYS`; telephony and model providers still process the live call under their own data controls.
 - Spoken turns are progressive: acknowledge the need, recommend one useful next step, ask one question, and pause instead of reading the full resource record.
 - `JOZI_DEMO_MODE=true` exposes presentation-only appointment, intake, availability-check, assessment, clinician-handoff, redirection, Zlto reward, and Mi-Change voucher-pathway states. The line leads into one caller-approved simulated action, presents the completed demo screen positively, and immediately clarifies that no external service was contacted and no real booking, voucher, reward, or service was created.
-- The Jozi line uses `JOZI_REALTIME_VOICE=marin` as its Live output voice, plus a prompt for a caring South African English cadence, slow number-reading, and no exaggerated accent. Singular Care voice selection remains independent.
+- The Jozi line uses `JOZI_REALTIME_VOICE=marin` as its Live output voice, plus a prompt for a caring South African English cadence, slow number-reading, and no exaggerated accent. Self Care voice selection remains independent.
 
 The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`](docs/jozi-demo-journeys.md).
 
@@ -299,7 +299,7 @@ The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`]
 | `OPENAI_LIVE_BACKEND_MODEL` | no | `gpt-5.6-terra` | Responses delegation model |
 | `OPENAI_LIVE_BACKEND_SERVICE_TIER` | no | - | Optional delegated Responses service tier |
 | `OPENAI_REALTIME_MODEL` | rollback | `gpt-realtime-2` | Legacy Realtime voice model |
-| `OPENAI_REALTIME_VOICE` | no | `marin` | Singular Care / health output voice |
+| `OPENAI_REALTIME_VOICE` | no | `marin` | Self Care / health output voice |
 | `JOZI_REALTIME_VOICE` | no | `marin` | Jozi output voice |
 | `OPENAI_SUMMARY_MODEL` | no | `gpt-5.5` | Post-call summary model |
 | `OPENAI_MEMORY_MODEL` | no | `gpt-5.5` | Post-call phone memory consolidation model |
@@ -317,25 +317,24 @@ The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`]
 | `JOZI_LINE_ENABLED` | no | `false` | Enables the explicit `/twilio/voice/jozi` line profile |
 | `HEALTH_PHONE_NUMBER` | Twilio line split | - | Expected E.164 destination number for the health webhook |
 | `JOZI_PHONE_NUMBER` | Jozi Twilio path | - | Expected E.164 destination number for the Jozi webhook |
-| `SELFCARE_LINE_ENABLED` | no | `false` | Enables the Singular Care `/twilio/voice/selfcare` profile |
-| `SELFCARE_PHONE_NUMBER` | selfcare Twilio path | - | Expected E.164 destination number for Singular Care |
+| `SELFCARE_LINE_ENABLED` | no | `false` | Enables the Self Care `/twilio/voice/selfcare` profile |
+| `SELFCARE_PHONE_NUMBER` | selfcare Twilio path | - | Expected E.164 destination number for Self Care |
 | `JOZI_DEMO_MODE` | no | `false` | Enables action-time demo booking, intake, assessment, clinician, and redirection screens |
 | `AUTOMATIC_FOLLOWUP_ENABLED` | no | `true` | Master switch for outbound SMS/WhatsApp; Jozi modes force it off |
 | `CALLER_MEMORY_ENABLED` | no | `true` | Enables hashed phone-level memory refresh after calls |
 | `CALLER_MEMORY_TTL_DAYS` | no | - | Optional memory retention TTL in days; blank means no automatic expiry |
 | `JOZI_TRANSCRIPT_TTL_DAYS` | no | `7` | Retention for minimal, phone-free Jozi call records |
-| `TELEPHONY_CODEC` | no | `g711_ulaw` | SignalWire codec hint |
+| `TELEPHONY_CODEC` | no | `g711_ulaw` | Legacy Realtime input-audio hint; GPT-Live SIP negotiates media automatically |
 | `TWILIO_ACCOUNT_SID` | Twilio | - | Twilio Account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio voice paths | - | Twilio primary auth token used to verify every voice and status webhook signature |
 | `TWILIO_SMS_NUMBER` | no | - | SMS follow-up sender |
 | `TWILIO_WHATSAPP_NUMBER` | no | - | WhatsApp follow-up sender |
 | `TWILIO_MESSAGING_SERVICE_SID` | no | - | Twilio Messaging Service SID |
-| `TWILIO_SIP_CODECS` | no | - | Twilio SIP codec override |
+| `TWILIO_SIP_CODECS` | no | - | Legacy Realtime input-audio hint; never emitted as a TwiML `<Sip>` attribute |
 | `SIGNALWIRE_PROJECT_ID` | SignalWire | - | SignalWire project ID |
 | `SIGNALWIRE_TOKEN` | SignalWire | - | SignalWire API token |
 | `SIGNALWIRE_SPACE` | SignalWire | - | SignalWire space hostname |
 | `SIGNALWIRE_SMS_FROM` | no | - | SignalWire SMS sender |
-| `SIP_CODECS` | no | - | SignalWire SIP codec override |
 | `ADMIN_TOKEN` | no | - | Enables transcript reader, `/sessions/<call_id>`, and admin memory APIs |
 
 ## Notes

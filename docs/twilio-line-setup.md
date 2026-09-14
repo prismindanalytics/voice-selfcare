@@ -4,12 +4,12 @@
 
 | Purpose | Number | Twilio SID | Incoming voice webhook | Method | Status callback |
 |---|---|---|---|---|---|
-| Singular Care selfcare | `+1 206 309 8528` | `PN19ee9e8ba71f4c532003dee946d4a084` | `https://voice-selfcare.prismindanalytics.workers.dev/twilio/voice/selfcare` | `POST` | `https://voice-selfcare.prismindanalytics.workers.dev/twilio/status` |
+| Self Care | `+1 206 309 8528` | `PN19ee9e8ba71f4c532003dee946d4a084` | `https://voice-selfcare.prismindanalytics.workers.dev/twilio/voice/selfcare` | `POST` | `https://voice-selfcare.prismindanalytics.workers.dev/twilio/status` |
 | Jozi My Jozi | `+1 425 517 3281` | `PN8d564bdd6e89dce700ad133c1ccab88e` | `https://voice-selfcare.prismindanalytics.workers.dev/twilio/voice/jozi` | `POST` | `https://voice-selfcare.prismindanalytics.workers.dev/twilio/status` |
 
-**2026-09-13:** the final two-line assignment is `+1 206` for Singular Care and `+1 425` for Jozi.
-The legacy health route is disabled. Singular Care also needs the `SELFCARE_BRIDGE_TOKEN` secret;
-its Eka record lookups and demo-timeline events go through the Singular Care demo Worker bridge.
+**2026-09-13:** the final two-line assignment is `+1 206` for Self Care and `+1 425` for Jozi.
+The legacy health route is disabled. Self Care also needs the `SELFCARE_BRIDGE_TOKEN` secret;
+its Eka record lookups and demo-timeline events go through the Self Care demo Worker bridge.
 
 The OpenAI project webhook is:
 
@@ -41,7 +41,7 @@ Do not use `/twilio/voice` for either production number: it is the disabled lega
    - `voiceApi` is `live` and `voiceModel` is `gpt-live-1`;
    - `twilioSelfcare` is `selfcare` and `twilioJozi` is `jozi`;
    - `twilioHealth` is absent.
-2. Call the 206 number. It must greet the caller as Singular Care and expose only selfcare tools.
+2. Call the 206 number. It must greet the caller as Self Care and expose only selfcare tools.
 3. Call the Jozi number. It must say “Jozi support demo line,” use the caring Jozi delivery, and expose only emergency, curated support, and demo-coordination tools.
 4. Test one Jozi routine journey and one emergency journey.
 5. Confirm the Jozi application record contains no caller phone or raw transcript after finalization.
@@ -51,9 +51,9 @@ Do not use `/twilio/voice` for either production number: it is the disabled lega
 To restore 206 to the old health assistant, set `HEALTH_LINE_ENABLED=true` and
 `SELFCARE_LINE_ENABLED=false`, deploy, then change its incoming webhook to
 `https://voice-selfcare.prismindanalytics.workers.dev/twilio/voice/health`. Reverse those two flags
-and return the webhook to `/twilio/voice/selfcare` to restore Singular Care.
+and return the webhook to `/twilio/voice/selfcare` to restore Self Care.
 
-To take Jozi offline without affecting Singular Care, set `JOZI_LINE_ENABLED=false` and use a
+To take Jozi offline without affecting Self Care, set `JOZI_LINE_ENABLED=false` and use a
 holding-message TwiML Bin on 425.
 
 To roll the OpenAI transport back, set `OPENAI_VOICE_API=realtime`, redeploy, and keep the existing

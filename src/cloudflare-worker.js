@@ -32,6 +32,7 @@ import {
   isReflectedLiveAudioEvent,
   liveFunctionCall,
   liveGreetingEvent,
+  liveGreetingStartEvent,
   liveToolResultEvents,
   liveTranscriptDelta,
   markLiveOfferSpoken,
@@ -164,10 +165,10 @@ const JOZI_COMBINED_HEALTH_INSTRUCTIONS = `
 - After the caller accepts a recommended clinic or service, use coordinate_support_demo to show the phone connection, booking, intake check, or caring redirection. Do not lead with what the line cannot do. The tool response will make clear, at the action moment, that the result is a demo and is not connected to the external service.
 `.trim();
 
-const SELFCARE_INSTRUCTIONS = `You are the Singular Care companion — the voice entry point of a self-care service used in South Africa and Mozambique. You are one channel of a continuum of care: everything important lands in one longitudinal patient record, and that record follows the person to a nurse, a video doctor, or a physical clinic.
+const SELFCARE_INSTRUCTIONS = `You are the Self Care companion — the voice entry point of a self-care service used in South Africa and Mozambique. You are one channel of a continuum of care: everything important lands in one longitudinal patient record, and that record follows the person to a nurse, a video doctor, or a physical clinic.
 
 ## INITIAL GREETING
-"Hello, you've reached the Singular Care line. I can help in English — ou em português. How can I help you today?"
+"Hello, you've reached the Self Care line. I can help in English — ou em português. How can I help you today?"
 
 ## LANGUAGE RULES
 - Start in English with the Portuguese offer above.
@@ -323,6 +324,8 @@ export class CallSession extends DurableObject {
     this.monitorSocket = null;
     this.sessionCreated = false;
     this.initialResponseSent = false;
+    this.seenLiveInputAudio = false;
+    this.seenLiveOutputAudio = false;
     ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS metadata (
@@ -684,7 +687,16 @@ export class CallSession extends DurableObject {
     );
     // A Live sideband mirrors every audio packet. Those packets need no application work and
     // must not refresh the Durable Object alarm dozens of times per second.
-    if (voiceApi === 'live' && isReflectedLiveAudioEvent(message)) return;
+    if (voiceApi === 'live' && isReflectedLiveAudioEvent(message)) {
+      const isInput = message.type === 'session.input_audio.append';
+      const flag = isInput ? 'seenLiveInputAudio' : 'seenLiveOutputAudio';
+      const marker = isInput ? 'first_live_input_audio_at' : 'first_live_output_audio_at';
+      if (!this[flag]) {
+        this[flag] = true;
+        this.setMeta(marker, new Date().toISOString());
+      }
+      return;
+    }
     await this.scheduleFinalizeAlarm(message.type || 'realtime_message');
 
     if (voiceApi === 'live') {
@@ -826,6 +838,16 @@ export class CallSession extends DurableObject {
       const acknowledgedId = String(message.client_event_id || '');
       if (acknowledgedId && acknowledgedId === this.getMeta('greeting_event_id')) {
         this.setMeta('greeting_acknowledged_at', new Date().toISOString());
+        this.sendLiveGreetingStart();
+      }
+      return;
+    }
+
+    if (message.type === 'session.commentary.appended') {
+      const acknowledgedId = String(message.client_event_id || '');
+      if (acknowledgedId && acknowledgedId === this.getMeta('greeting_commentary_event_id')) {
+        this.setMeta('greeting_commentary_acknowledged_at', new Date().toISOString());
+        this.setMeta('last_stage', 'initial_response_started');
       }
       return;
     }
@@ -906,6 +928,11 @@ export class CallSession extends DurableObject {
         this.setMeta('greeting_retry_count', '1');
         this.initialResponseSent = false;
         this.sendInitialResponse();
+      } else if (failedEventId && failedEventId === this.getMeta('greeting_commentary_event_id') &&
+          Number(this.getMeta('greeting_commentary_retry_count') || 0) < 1) {
+        this.setMeta('greeting_commentary_retry_count', '1');
+        this.deleteMeta('greeting_commentary_event_id');
+        this.sendLiveGreetingStart();
       }
     }
   }
@@ -1285,7 +1312,7 @@ export class CallSession extends DurableObject {
             const action = String(args.action || 'clinician_handoff');
             const when = String(args.requested_time || 'the next available time');
             const messages = {
-              appointment_request: `All set—the demo now shows a Singular Care appointment booked for ${when}. No clinic or clinician was contacted, so no real appointment was booked.`,
+              appointment_request: `All set—the demo now shows a Self Care appointment booked for ${when}. No clinic or clinician was contacted, so no real appointment was booked.`,
               clinician_handoff: 'Please hold—the demo now shows a doctor joining shortly. No live doctor was contacted or connected.',
               care_team_callback: `All set—the demo now shows a care-team callback requested for ${when}. No live callback request was sent.`
             };
@@ -1333,7 +1360,7 @@ export class CallSession extends DurableObject {
             this.pushSelfcareTimelineEvent({
               type: 'escalation',
               title: `Voice line emergency: ${(args.symptoms || []).slice(0, 3).join(', ').slice(0, 90) || args.safety_context || 'emergency guidance given'}`,
-              detail: 'Deterministic emergency guidance given on the Singular Care voice line; caller directed to urgent care.'
+              detail: 'Deterministic emergency guidance given on the Self Care voice line; caller directed to urgent care.'
             });
           }
           if (!modeIncludesJozi(serviceMode)) {
@@ -1587,7 +1614,7 @@ export class CallSession extends DurableObject {
     const apiKey = this.env.OPENAI_API_KEY;
     if (!apiKey) return fallbackSummaries(messages, artifacts);
     const selfcareScribeLines = summaryServiceMode === 'selfcare' ? [
-      'This call was on the Singular Care self-care line for South Africa and Mozambique.',
+      'This call was on the Self Care line for South Africa and Mozambique.',
       'Write patientSummary in the language the caller mainly spoke — a Portuguese caller gets Portuguese.',
       'Write providerSummary in English regardless of the call language.',
       'If the transcript contains clinical-record lines (starting "Eka patient lookup:" or "Eka patient context:"), name the matched patient in providerSummary and fold that record context into the handoff; never copy internal record IDs into patientSummary.',
@@ -1902,6 +1929,16 @@ export class CallSession extends DurableObject {
     }
   }
 
+  sendLiveGreetingStart() {
+    if (this.getMeta('greeting_commentary_event_id')) return;
+    const eventId = generateId('GREETING_START');
+    if (!this.sendRealtime(liveGreetingStartEvent(eventId))) return;
+    this.setMeta('greeting_commentary_event_id', eventId);
+    this.setMeta('greeting_commentary_sent_at', new Date().toISOString());
+    this.setMeta('last_stage', 'initial_response_start_requested');
+    console.log('[Live] greeting commentary requested');
+  }
+
   setMeta(key, value) {
     if (value === undefined || value === null) return;
     this.ctx.storage.sql.exec(
@@ -2002,14 +2039,12 @@ async function routeRequest(request, env, ctx) {
     if (!env.TWILIO_AUTH_TOKEN) return textResponse('Twilio verification is not configured.', 503);
     if (!await verifyTwilioRequest(request, env)) return textResponse('Invalid Twilio signature.', 403);
     if (!activeLineConfigurationIsValid(env)) return textResponse('Voice line configuration is invalid.', 503);
-    const normalizedVoicePath = path.toLowerCase().replace(/\/+$/, '');
-    const forcedCodec = normalizedVoicePath.endsWith('/pcmu') ? 'PCMU' : normalizedVoicePath.endsWith('/pcma') ? 'PCMA' : '';
     const serviceMode = serviceModeForTwilioVoicePath(path, configuredServiceMode(env));
     if (!serviceMode) return textResponse('Not Found', 404);
     if (serviceMode === 'health' && !healthLineEnabled(env)) return textResponse('Health line is not enabled.', 404);
     if (serviceMode === 'jozi' && !joziLineEnabled(env)) return textResponse('Jozi line is not enabled.', 404);
     if (serviceMode === 'selfcare' && !selfcareLineEnabled(env)) return textResponse('Selfcare line is not enabled.', 404);
-    return handleTwilioVoice(request, env, { forcedCodec, serviceMode });
+    return handleTwilioVoice(request, env, { serviceMode });
   }
 
   if (request.method === 'POST' && path === '/twilio/status') {
@@ -2135,14 +2170,12 @@ async function handleSignalWireVoice(request, env) {
   const sipUri = buildOpenAISipUri(projectId, {}, {
     secureMedia: configuredOpenAIVoiceApi(env) === 'live'
   });
-  const codec = env.SIP_CODECS || mapG711ToSip(env.TELEPHONY_CODEC);
-  const codecsAttr = codec ? ` codecs="${escapeXml(codec)}"` : '';
   const lineLabel = modeIncludesJozi(configuredServiceMode(env)) ? 'Jozi health and support line' : 'healthcare assistant';
 
   return xmlResponse(`<Response>
   <Say>Connecting to the ${escapeXml(lineLabel)}, please wait.</Say>
   <Dial>
-    <Sip${codecsAttr}>${escapeXml(sipUri)}</Sip>
+    <Sip>${escapeXml(sipUri)}</Sip>
   </Dial>
 </Response>`);
 }
@@ -2178,18 +2211,16 @@ async function handleTwilioVoice(request, env, options = {}) {
   const sipUri = buildOpenAISipUri(projectId, sipHeaders, {
     secureMedia: configuredOpenAIVoiceApi(env) === 'live'
   });
-  const codec = options.forcedCodec || env.TWILIO_SIP_CODECS || mapG711ToSip(env.TELEPHONY_CODEC);
-  const codecsAttr = codec ? ` codecs="${escapeXml(codec)}"` : '';
   const statusUrl = `${origin}/twilio/status`;
   const dialStatusUrl = `${origin}/twilio/dial-status`;
   const lineLabel = modeIncludesJozi(serviceMode)
     ? 'Jozi support line'
-    : serviceMode === 'selfcare' ? 'Singular Care line' : 'healthcare assistant';
+    : serviceMode === 'selfcare' ? 'Self Care line' : 'healthcare assistant';
 
   return xmlResponse(`<Response>
   <Say>Connecting to the ${escapeXml(lineLabel)}, please wait.</Say>
   <Dial action="${escapeXml(dialStatusUrl)}" method="POST">
-    <Sip${codecsAttr} statusCallback="${escapeXml(statusUrl)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed">${escapeXml(sipUri)}</Sip>
+    <Sip statusCallback="${escapeXml(statusUrl)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed">${escapeXml(sipUri)}</Sip>
   </Dial>
 </Response>`);
 }
@@ -3416,7 +3447,7 @@ function buildServiceInstructions(mode, memoryContext) {
 function buildLiveFrontendInstructions(mode) {
   const normalized = normalizeServiceMode(mode);
   const identity = normalized === 'selfcare'
-    ? 'You are the Singular Care self-care companion for callers in South Africa and Mozambique.'
+    ? 'You are the Self Care companion for callers in South Africa and Mozambique.'
     : modeIncludesJozi(normalized)
       ? 'You are the Jozi My Jozi support companion for people in Johannesburg, including callers without stable housing, money, transport, privacy, a kitchen, or a safe place to wash.'
       : 'You are a warm telephone health adviser for callers in low-resource settings.';
@@ -3502,7 +3533,7 @@ function buildLiveBackendInstructions(mode, serviceInstructions) {
 
 function buildMinimalInstructions(mode) {
   if (normalizeServiceMode(mode) === 'selfcare') {
-    return 'You are the Singular Care self-care line for South Africa and Mozambique. Speak English or Portuguese following the caller, ask one short question at a time, use the record tools only with the caller\'s confirmed identity, and escalate emergencies first.';
+    return 'You are the Self Care line for South Africa and Mozambique. Speak English or Portuguese following the caller, ask one short question at a time, use the record tools only with the caller\'s confirmed identity, and escalate emergencies first.';
   }
   return modeIncludesJozi(mode)
     ? 'You are the caring Jozi My Jozi support line. Understand ordinary speech, remember needs and landmarks across turns, ask one short question at a time, use only verified support tools for destination facts, and escalate immediate danger first.'
@@ -3806,7 +3837,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
     {
       type: 'function',
       name: 'coordinate_selfcare_demo',
-      description: 'Complete one simulated Singular Care appointment, clinician handoff, or care-team callback only after the caller clearly accepts the offer. The result positively shows the demo state and then clarifies that no external action occurred.',
+      description: 'Complete one simulated Self Care appointment, clinician handoff, or care-team callback only after the caller clearly accepts the offer. The result positively shows the demo state and then clarifies that no external action occurred.',
       parameters: {
         type: 'object',
         properties: {
@@ -4606,7 +4637,7 @@ function optionalLiveServiceTier(value) {
   return ['auto', 'default', 'flex', 'priority'].includes(tier) ? tier : undefined;
 }
 
-/* The Singular Care demo Worker owns the Eka credentials and the demo timeline; this Worker only
+/* The Self Care demo Worker owns the Eka credentials and the demo timeline; this Worker only
    holds a bearer token for its bridge. Short timeout — a voice turn cannot wait long. */
 const DEFAULT_SELFCARE_BRIDGE_TIMEOUT_MS = 3500;
 async function selfcareBridgeRequest(env, path, options = {}) {
@@ -5101,21 +5132,6 @@ function escapeXml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&apos;');
-}
-
-function mapG711ToSip(codec) {
-  switch (String(codec || '').toLowerCase()) {
-    case 'g711_ulaw':
-    case 'pcmu':
-    case 'ulaw':
-      return 'PCMU';
-    case 'g711_alaw':
-    case 'pcma':
-    case 'alaw':
-      return 'PCMA';
-    default:
-      return '';
-  }
 }
 
 function generateId(prefix) {
