@@ -114,16 +114,18 @@ test('selfcare exposes one truthful simulated care-coordination tool', () => {
   assert.match(source, /No live doctor was contacted or connected/);
 });
 
-test('selfcare uses medical judgment and can resolve nearby care after location', () => {
+test('selfcare uses model-led medical judgment and nearby-care knowledge', () => {
   const source = readFileSync(fileURLToPath(new URL('../src/cloudflare-worker.js', import.meta.url)), 'utf8');
   assert.match(source, /## MEDICAL JUDGMENT AND NEARBY CARE/);
-  assert.match(source, /Use broad medical knowledge to reason from the caller's symptoms/);
-  assert.match(source, /always include a concise medical_content explanation and a concrete next_step/);
-  assert.match(source, /call resolve_providers once/);
+  assert.match(source, /Use your medical judgment naturally from the whole conversation/);
+  assert.match(source, /without relying on a fixed symptom script/);
+  assert.match(source, /Prefer the least intensive level of care that is medically safe/);
+  assert.match(source, /use your own geographic knowledge and the caller's location or landmark/);
+  assert.match(source, /Call find_clinics once/);
   assert.match(source, /single most suitable returned option first/);
   assert.match(source, /use only voiceResponse and selected for factual details/i);
   assert.match(source, /Never retry without a new caller detail/);
-  assert.match(source, /const providerTool = healthTools\.find\(\(tool\) => tool\.name === 'resolve_providers'\)/);
+  assert.match(source, /const providerTool = healthTools\.find\(\(tool\) => tool\.name === 'find_clinics'\)/);
   assert.match(source, /if \(normalized === 'selfcare'\) return \[assessmentTool, emergencyTool, providerTool, \.\.\.selfcareTools\]/);
   assert.doesNotMatch(
     source.match(/if \(normalized === 'selfcare'\) return \[[^\n]+/)?.[0] || '',

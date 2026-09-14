@@ -184,10 +184,10 @@ const SELFCARE_INSTRUCTIONS = `You are the Self Care companion — the voice ent
 - Be systematic but light: one question at a time, OPQRST when clinically relevant, and always screen red flags: chest pain, severe breathing difficulty, severe bleeding, stroke signs, seizures, confusion, suicidal intent, severe child dehydration, and pregnancy danger signs (severe headache, blurred vision, sudden swelling, bleeding, reduced movement).
 
 ## MEDICAL JUDGMENT AND NEARBY CARE
-- Use broad medical knowledge to reason from the caller's symptoms, history, medicines, age, pregnancy context, and red flags. Do not merely match keywords or follow a fixed symptom script.
-- Decide whether the safest next step is home self-care, routine care, prompt clinical review, or emergency help. Explain the reasoning briefly in plain language without diagnosing or prescribing.
-- When you call health_assessment, always include a concise medical_content explanation and a concrete next_step so the caller hears useful guidance rather than an administrative confirmation.
-- If the caller asks for nearby care, or your assessment indicates in-person care, ask once for the most specific city, neighbourhood, landmark, or address they can give. Then call resolve_providers once with the care need, provider type, and urgency.
+- Use your medical judgment naturally from the whole conversation, ask only for the most useful missing detail, and choose the appropriate level of care without relying on a fixed symptom script.
+- Prefer the least intensive level of care that is medically safe. Unless immediate danger is already clear, establish severity and associated warning signs before recommending emergency care.
+- When you call health_assessment, include a concise medical explanation and concrete next step so the caller hears useful guidance rather than an administrative confirmation.
+- When nearby care is requested or clinically appropriate, use your own geographic knowledge and the caller's location or landmark to choose the closest suitable level of care. Call find_clinics once with the best options ordered closest and most appropriate first; if the place or proximity is unclear, ask one brief question instead of guessing.
 - Recommend the single most suitable returned option first, with its name and address, and say it is a model-assisted demo suggestion that must be confirmed before travel. Offer another returned option only if the caller wants one. Never invent a provider, telephone number, hours, distance, availability, or capacity outside the tool result.
 
 ## EMERGENCIES
@@ -211,7 +211,7 @@ This line can open the caller's record in the clinical system. It is a demonstra
 - After the caller clearly accepts, call coordinate_selfcare_demo. Lead with the completed demo state, then immediately say that no live clinician or clinic was contacted.
 
 ## WHAT YOU NEVER DO
-- Never diagnose or prescribe. Never invent prices, clinic names, addresses, opening times, or phone numbers.
+- Never diagnose or prescribe. State facility names, addresses, prices, opening times, or phone numbers only after they have passed through a tool result; never add details outside that result.
 - Never present a demo booking, handoff, or callback as a real external action.
 
 ## VOICE CONSTRAINTS
@@ -3569,7 +3569,7 @@ function buildLiveBackendInstructions(mode, serviceInstructions) {
 
 function buildMinimalInstructions(mode) {
   if (normalizeServiceMode(mode) === 'selfcare') {
-    return 'You are the multilingual Self Care line for South Africa and Mozambique. Follow the caller into any language you understand confidently. Use medical knowledge for symptom reasoning, call resolve_providers after obtaining a specific location when nearby care is needed, ask one short question at a time, use record tools only with the caller\'s confirmed identity, and escalate emergencies first.';
+    return 'You are the multilingual Self Care line. Follow the caller into any language you understand confidently, use your medical judgment for symptom reasoning, use find_clinics with your own geographic knowledge when nearby care is needed, ask one short question at a time, use record tools only with the caller\'s confirmed identity, and escalate emergencies first.';
   }
   return modeIncludesJozi(mode)
     ? 'You are the caring Jozi My Jozi support line. Understand ordinary speech, remember needs and landmarks across turns, ask one short question at a time, use only verified support tools for destination facts, and escalate immediate danger first.'
@@ -3650,14 +3650,17 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
     {
       type: 'function',
       name: 'find_clinics',
-      description: 'Resolve a few real-world plausible nearby care options after the patient gives a location. This backend tool uses a short timed provider lookup and returns simulated/unverified options.',
+      description: 'Use your own medical and geographic knowledge to choose the closest appropriate real-world care facilities after the caller gives a location or landmark. Match the level of care to the full clinical context and put the closest suitable option first. Call this only when you are confident enough to name at least one local facility; otherwise ask one brief location question first. Results are simulated and unverified.',
       parameters: {
         type: 'object',
         properties: {
           location: { type: 'string' },
+          need: { type: 'string' },
           specialty: { type: 'string' },
+          urgency: { type: 'string', enum: ['routine', 'soon', 'urgent'] },
           options: {
             type: 'array',
+            description: 'Real-world plausible facilities from your own knowledge, ordered by clinical fit and proximity.',
             items: {
               type: 'object',
               properties: {
@@ -3671,7 +3674,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
             }
           }
         },
-        required: ['location']
+        required: ['location', 'need', 'options']
       }
     },
     {
@@ -3891,7 +3894,7 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
   if (normalized === 'health') return healthTools;
   const emergencyTool = healthTools.find((tool) => tool.name === 'handle_emergency');
   const assessmentTool = healthTools.find((tool) => tool.name === 'health_assessment');
-  const providerTool = healthTools.find((tool) => tool.name === 'resolve_providers');
+  const providerTool = healthTools.find((tool) => tool.name === 'find_clinics');
   if (normalized === 'selfcare') return [assessmentTool, emergencyTool, providerTool, ...selfcareTools];
   if (normalized === 'jozi') return [emergencyTool, ...supportTools];
   return [assessmentTool, emergencyTool, ...supportTools];

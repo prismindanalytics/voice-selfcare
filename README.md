@@ -262,7 +262,7 @@ Durable Object SQL remains the source of truth during the live call. KV is the f
 
 ## Provider Lookup
 
-Pickup and testing tools can resolve nearby provider options on the backend. The voice agent collects the patient need and location, then the Worker calls `OPENAI_PROVIDER_MODEL` with a short timeout to return a few real-world plausible options from model knowledge. This is still simulated and unverified, not live search.
+Self Care lets the delegated reasoning model use its own medical and geographic knowledge to propose nearby care from the caller's need and location. Other pickup and testing tools can call `OPENAI_PROVIDER_MODEL` with a short timeout for the same kind of model-led lookup. These suggestions are simulated and unverified, not live search.
 
 If the lookup is slow, unavailable, or the location is too vague, the tool returns a fast fallback asking for one more precise location detail. It should not leave the caller waiting in silence.
 
