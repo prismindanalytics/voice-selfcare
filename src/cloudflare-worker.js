@@ -16,11 +16,33 @@ import {
 } from './jozi-support.js';
 import {
   extractTwilioCallSidFromSipHeaders,
+  namesReasonablyMatch,
   normalizeLineServiceMode,
   serviceModeForTwilioVoicePath,
   twilioLineBindingMatches,
   verifyTwilioRequest
 } from './line-routing.js';
+import {
+  DEFAULT_LIVE_BACKEND_MODEL,
+  DEFAULT_LIVE_MODEL,
+  buildOpenAISipUri,
+  buildLiveAcceptPayload,
+  classifyLiveConsentTurn,
+  compactLiveJoziToolResult,
+  isReflectedLiveAudioEvent,
+  liveFunctionCall,
+  liveGreetingEvent,
+  liveToolResultEvents,
+  liveTranscriptDelta,
+  markLiveOfferSpoken,
+  nextFinalizeAlarmAt,
+  normalizeOpenAIVoiceApi,
+  openAIAcceptUrl,
+  openAIAttachUrl,
+  openAIRejectUrl,
+  voiceApiForIncomingEvent,
+  voiceSessionId
+} from './openai-voice-api.js';
 
 const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2';
 const DEFAULT_SUMMARY_MODEL = 'gpt-5.5';
@@ -30,6 +52,7 @@ const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
 const DEFAULT_VOICE = 'marin';
 const DEFAULT_MAX_OUTPUT_TOKENS = 900;
 const DEFAULT_FINALIZE_IDLE_MS = 120000;
+const DEFAULT_LIVE_FINALIZE_DRAIN_MS = 1500;
 const DEFAULT_PROVIDER_LOOKUP_TIMEOUT_MS = 2500;
 const CALLER_MEMORY_PREFIX = 'caller_memory/';
 
@@ -141,6 +164,61 @@ const JOZI_COMBINED_HEALTH_INSTRUCTIONS = `
 - After the caller accepts a recommended clinic or service, use coordinate_support_demo to show the phone connection, booking, intake check, or caring redirection. Do not lead with what the line cannot do. The tool response will make clear, at the action moment, that the result is a demo and is not connected to the external service.
 `.trim();
 
+const SELFCARE_INSTRUCTIONS = `You are the Singular Care companion — the voice entry point of a self-care service used in South Africa and Mozambique. You are one channel of a continuum of care: everything important lands in one longitudinal patient record, and that record follows the person to a nurse, a video doctor, or a physical clinic.
+
+## INITIAL GREETING
+"Hello, you've reached the Singular Care line. I can help in English — ou em português. How can I help you today?"
+
+## LANGUAGE RULES
+- Start in English with the Portuguese offer above.
+- Switch fully to Portuguese the moment the caller uses it (Mozambican Portuguese: consulta, centro de saúde, farmácia, tensão arterial). If they use another language, do your best in it and keep it simple.
+- Stay in the caller's language until they switch back.
+
+## WHAT YOU DO (self-care scope)
+- Everyday symptom guidance: colds and flu, sore throat, headaches, fever, stomach upsets, minor injuries — what to do at home, what to watch for, when to be seen.
+- Chronic-condition self-care: blood-pressure and glucose readings, medication adherence and side-effect questions, lifestyle steps.
+- Maternal wellbeing: normal-pregnancy reassurance and danger-sign screening.
+- Mental wellbeing: stress, low mood, sleep — supportive self-care steps.
+- Be systematic but light: one question at a time, OPQRST when clinically relevant, and always screen red flags: chest pain, severe breathing difficulty, severe bleeding, stroke signs, seizures, confusion, suicidal intent, severe child dehydration, and pregnancy danger signs (severe headache, blurred vision, sudden swelling, bleeding, reduced movement).
+
+## EMERGENCIES
+Call handle_emergency immediately, then direct urgent care without hedging: in South Africa call 10177, or 112 from a mobile; in Mozambique call 112 from a mobile or go straight to the nearest banco de socorros.
+
+## THE PATIENT RECORD — your distinctive capability
+This line can open the caller's record in the clinical system. It is a demonstration workspace holding fictional, demo-labelled patients.
+- Offer it whenever history would help: "I can check your record, if you like."
+- Use eka_find_patient first. It searches by mobile number. Most demo callers dial from numbers that are not in the workspace — if nothing is found on the caller's own number, ask which mobile number the record is under (demo visitors will give a demo number such as 082 000 0001).
+- One number can hold several people — a family. If more than one profile comes back, ask who the call is about before opening anything.
+- VERIFY IDENTITY before speaking any record content — but verify like a human, not a password field. Ask who the call is about and accept a close phonetic transcription of the returned name, but never accept a materially different name or ask the caller to recite internal record labels. Ask the date of birth AT MOST ONCE, and only when something sensitive will be discussed; if they cannot give it, keep the conversation general instead of repeating the question. Never claim you matched or checked a detail that did not actually come back from a tool.
+- Only then call eka_patient_context, and weave what you learn in naturally: "I can see the doctor started you on amlodipine in April — is this call about that?" Never read internal IDs aloud.
+- Never invent record content. If the tools fail or find nothing, say so plainly and continue without the record.
+
+## RECORD-KEEPING
+- Once you can classify the concern, call health_assessment — it writes to the longitudinal record, and urgent assessments alert the care team.
+- After the call a summary for the caller and a clinical handoff note for the care team are produced automatically; tell the caller the care team will have the full picture.
+
+## DEMO ACTIONS
+- When a caller needs care beyond self-care, offer one next step: a simulated appointment, a simulated clinician handoff, or a simulated care-team callback.
+- After the caller clearly accepts, call coordinate_selfcare_demo. Lead with the completed demo state, then immediately say that no live clinician or clinic was contacted.
+
+## WHAT YOU NEVER DO
+- Never diagnose or prescribe. Never invent prices, clinic names, addresses, opening times, or phone numbers.
+- Never present a demo booking, handoff, or callback as a real external action.
+
+## VOICE CONSTRAINTS
+- Two to three short sentences per turn, one question at a time, warm and plain.
+- Spell out medication names clearly; read numbers slowly.
+- This is a demonstration line with fictional patients — but if a caller shares something real and serious, still give safe guidance and the emergency numbers.`;
+
+const SELFCARE_ACTION_RESPONSE_INSTRUCTIONS = [
+  "Answer in one or two short spoken sentences, warm and calm, in the caller's language.",
+  'For a demo coordination result, lead with its completed demo state, then say its one truthful sentence explaining that no live clinic, clinician, or care team was contacted.',
+  "If the tool result contains record content, weave in only the one or two most relevant facts; never read internal IDs, and never reveal record content before the caller has confirmed the patient's name.",
+  'If a lookup found several people on one number, ask who the call is about before opening anything.',
+  'If a record tool failed or found nothing, say so briefly and continue without it.',
+  'Do not add a long recap.'
+].join(' ');
+
 export class CallerRegistry extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -225,7 +303,7 @@ export class CallerRegistry extends DurableObject {
       return null;
     }
     const serviceMode = String(row.service_mode || '').trim().toLowerCase();
-    if (!['health', 'jozi'].includes(serviceMode)) return null;
+    if (!['health', 'jozi', 'selfcare'].includes(serviceMode)) return null;
     return {
       serviceMode,
       callerPhone: asE164(row.caller_phone || '') || null,
@@ -267,11 +345,26 @@ export class CallSession extends DurableObject {
           updated_at TEXT NOT NULL
         )
       `);
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS live_transcript_deltas (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id TEXT NOT NULL UNIQUE,
+          role TEXT NOT NULL,
+          delta TEXT NOT NULL,
+          start_ms INTEGER,
+          end_ms INTEGER,
+          received_at TEXT NOT NULL
+        )
+      `);
     });
   }
 
   async acceptAndMonitor(event, initialPhone = null, options = {}) {
-    const callId = getCallId(event);
+    const voiceApi = normalizeOpenAIVoiceApi(
+      options.voiceApi || voiceApiForIncomingEvent(event),
+      configuredOpenAIVoiceApi(this.env)
+    );
+    const callId = voiceSessionId(event, voiceApi);
     if (!callId) return;
     if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
     if (this.getMeta('accepting_at') && !this.getMeta('accepted_at')) return;
@@ -285,6 +378,7 @@ export class CallSession extends DurableObject {
       : normalizePatientPhone(initialPhone, callId);
     this.setMeta('accepting_at', new Date().toISOString());
     this.setMeta('call_id', callId);
+    this.setMeta('voice_api', voiceApi);
     this.setMeta('patient_phone', safePhone);
     this.setMeta('service_mode', serviceMode);
     try {
@@ -310,7 +404,20 @@ export class CallSession extends DurableObject {
       }
 
       if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
-      const connected = await this.connectMonitor(callId);
+      let connected = false;
+      try {
+        connected = await this.connectMonitor(callId);
+      } catch (error) {
+        const voiceApi = normalizeOpenAIVoiceApi(
+          this.getMeta('voice_api'),
+          configuredOpenAIVoiceApi(this.env)
+        );
+        const attempts = Number(this.getMeta('live_monitor_reconnect_attempts') || 0);
+        if (voiceApi !== 'live' || attempts >= 1) throw error;
+        this.setMeta('live_monitor_reconnect_attempts', String(attempts + 1));
+        this.setMeta('monitor_initial_attach_error', String(error?.message || error).slice(0, 300));
+        connected = await this.reconnectLiveMonitor(callId);
+      }
       if (!connected || this.getMeta('completed_at') || this.getMeta('terminal_at')) return;
       await this.scheduleFinalizeAlarm('accept_and_monitor');
     } finally {
@@ -320,7 +427,9 @@ export class CallSession extends DurableObject {
 
   async alarm() {
     if (!this.getMeta('terminal_at')) this.setMeta('terminal_at', new Date().toISOString());
-    if (!this.getMeta('completed_at')) this.setMeta('finalize_reason', 'idle_alarm');
+    if (!this.getMeta('completed_at') && !this.getMeta('finalize_reason')) {
+      this.setMeta('finalize_reason', 'idle_alarm');
+    }
     await this.finalizeCall();
   }
 
@@ -328,6 +437,26 @@ export class CallSession extends DurableObject {
     if (!this.getMeta('terminal_at')) this.setMeta('terminal_at', new Date().toISOString());
     if (!this.getMeta('completed_at')) this.setMeta('finalize_reason', reason);
     await this.finalizeCall();
+  }
+
+  async providerEnded(reason = 'provider_callback') {
+    const voiceApi = normalizeOpenAIVoiceApi(
+      this.getMeta('voice_api'),
+      configuredOpenAIVoiceApi(this.env)
+    );
+    if (voiceApi !== 'live') {
+      await this.forceFinalize(reason);
+      return;
+    }
+    const drainMs = Math.min(
+      5000,
+      Math.max(250, numericEnv(this.env.OPENAI_LIVE_FINALIZE_DRAIN_MS, DEFAULT_LIVE_FINALIZE_DRAIN_MS))
+    );
+    const deadline = Date.now() + drainMs;
+    this.setMeta('provider_ended_at', new Date().toISOString());
+    this.setMeta('finalize_reason', reason);
+    this.setMeta('live_drain_deadline_ms', String(deadline));
+    await this.ctx.storage.setAlarm(deadline);
   }
 
   async getSession() {
@@ -382,7 +511,13 @@ export class CallSession extends DurableObject {
 
   async acceptCall(callId, options = {}) {
     const apiKey = requireEnv(this.env, 'OPENAI_API_KEY');
-    const model = this.env.OPENAI_REALTIME_MODEL || DEFAULT_REALTIME_MODEL;
+    const voiceApi = normalizeOpenAIVoiceApi(
+      this.getMeta('voice_api'),
+      configuredOpenAIVoiceApi(this.env)
+    );
+    const model = voiceApi === 'live'
+      ? this.env.OPENAI_LIVE_MODEL || DEFAULT_LIVE_MODEL
+      : this.env.OPENAI_REALTIME_MODEL || DEFAULT_REALTIME_MODEL;
     const useTools = String(this.env.OPENAI_ACCEPT_TOOLS || 'true').toLowerCase() !== 'false';
     const simpleInstructions = options.minimal ||
       String(this.env.OPENAI_ACCEPT_SIMPLE || 'false').toLowerCase() === 'true';
@@ -390,19 +525,33 @@ export class CallSession extends DurableObject {
     const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
     const demoEnabled = joziDemoEnabled(this.env);
 
-    const payload = {
-      type: 'realtime',
-      model,
-      audio: {
-        input: realtimeInputAudioConfig(this.env),
-        output: { voice: realtimeVoiceForMode(this.env, serviceMode) }
-      },
-      instructions: simpleInstructions ? buildMinimalInstructions(serviceMode) : buildServiceInstructions(serviceMode, memoryContext),
-      tools: useTools ? realtimeTools(serviceMode, demoEnabled) : undefined
-    };
+    const serviceInstructions = simpleInstructions
+      ? buildMinimalInstructions(serviceMode)
+      : buildServiceInstructions(serviceMode, memoryContext);
+    const payload = voiceApi === 'live'
+      ? buildLiveAcceptPayload({
+          model,
+          voice: realtimeVoiceForMode(this.env, serviceMode),
+          frontendInstructions: buildLiveFrontendInstructions(serviceMode),
+          backendModel: this.env.OPENAI_LIVE_BACKEND_MODEL || DEFAULT_LIVE_BACKEND_MODEL,
+          backendInstructions: buildLiveBackendInstructions(serviceMode, serviceInstructions),
+          tools: useTools ? realtimeTools(serviceMode, demoEnabled) : [],
+          maxOutputTokens: numericEnv(this.env.OPENAI_MAX_OUTPUT_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS),
+          serviceTier: optionalLiveServiceTier(this.env.OPENAI_LIVE_BACKEND_SERVICE_TIER)
+        })
+      : {
+          type: 'realtime',
+          model,
+          audio: {
+            input: realtimeInputAudioConfig(this.env),
+            output: { voice: realtimeVoiceForMode(this.env, serviceMode) }
+          },
+          instructions: serviceInstructions,
+          tools: useTools ? realtimeTools(serviceMode, demoEnabled) : undefined
+        };
 
     this.setMeta('last_stage', 'accepting_call');
-    const response = await fetch(`https://api.openai.com/v1/realtime/calls/${encodeURIComponent(callId)}/accept`, {
+    const response = await fetch(openAIAcceptUrl(voiceApi, callId), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -420,8 +569,12 @@ export class CallSession extends DurableObject {
     }
     if (this.getMeta('completed_at') || this.getMeta('terminal_at')) return false;
     this.setMeta('last_stage', 'call_accepted');
-    this.setMeta('accept_transcription_model', this.env.OPENAI_TRANSCRIPTION_MODEL || DEFAULT_TRANSCRIPTION_MODEL);
-    console.log('[CallSession] accepted call', JSON.stringify({ callId, model }));
+    if (voiceApi === 'realtime') {
+      this.setMeta('accept_transcription_model', this.env.OPENAI_TRANSCRIPTION_MODEL || DEFAULT_TRANSCRIPTION_MODEL);
+    } else {
+      this.setMeta('live_backend_model', this.env.OPENAI_LIVE_BACKEND_MODEL || DEFAULT_LIVE_BACKEND_MODEL);
+    }
+    console.log('[CallSession] accepted call', JSON.stringify({ callId, voiceApi, model }));
     return true;
   }
 
@@ -429,8 +582,12 @@ export class CallSession extends DurableObject {
     if (this.monitorSocket && this.monitorSocket.readyState === WebSocket.OPEN) return true;
 
     const apiKey = requireEnv(this.env, 'OPENAI_API_KEY');
+    const voiceApi = normalizeOpenAIVoiceApi(
+      this.getMeta('voice_api'),
+      configuredOpenAIVoiceApi(this.env)
+    );
     this.setMeta('last_stage', 'connecting_monitor');
-    const response = await fetch(`https://api.openai.com/v1/realtime?call_id=${encodeURIComponent(callId)}`, {
+    const response = await fetch(openAIAttachUrl(voiceApi, callId), {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Origin: 'https://api.openai.com',
@@ -453,7 +610,7 @@ export class CallSession extends DurableObject {
     this.monitorSocket = socket;
     socket.accept();
     this.setMeta('last_stage', 'monitor_connected');
-    console.log('[CallSession] monitor connected', JSON.stringify({ callId }));
+    console.log('[CallSession] monitor connected', JSON.stringify({ callId, voiceApi }));
 
     socket.addEventListener('message', (event) => {
       void this.handleRealtimeMessage(event.data).catch((error) => {
@@ -463,9 +620,20 @@ export class CallSession extends DurableObject {
 
     socket.addEventListener('close', () => {
       this.monitorSocket = null;
-      void this.finalizeCall().catch((error) => {
-        console.error('[Monitor] Finalize failed', error);
-      });
+      this.setMeta('monitor_disconnected_at', new Date().toISOString());
+      if (voiceApi === 'realtime') {
+        void this.finalizeCall().catch((error) => {
+          console.error('[Monitor] Finalize failed', error);
+        });
+      } else if (!this.getMeta('terminal_at') && !this.getMeta('completed_at')) {
+        const attempts = Number(this.getMeta('live_monitor_reconnect_attempts') || 0);
+        if (attempts < 1) {
+          this.setMeta('live_monitor_reconnect_attempts', String(attempts + 1));
+          this.ctx.waitUntil(this.reconnectLiveMonitor(callId));
+        } else {
+          this.setMeta('monitor_error', 'live_sideband_closed_after_bounded_reconnect');
+        }
+      }
     });
 
     socket.addEventListener('error', (event) => {
@@ -473,13 +641,33 @@ export class CallSession extends DurableObject {
       console.error('[CallSession] monitor socket error', JSON.stringify({ callId }));
     });
 
-    setTimeout(() => {
-      if (!this.initialResponseSent) {
-        console.log('[Realtime] session.created not observed before greeting fallback');
-        this.sendInitialResponse();
-      }
-    }, 500);
+    if (voiceApi === 'live') {
+      this.flushPendingLiveEvents();
+      this.sendInitialResponse();
+    } else {
+      setTimeout(() => {
+        if (!this.initialResponseSent) {
+          console.log('[Realtime] session.created not observed before greeting fallback');
+          this.sendInitialResponse();
+        }
+      }, 500);
+    }
     return true;
+  }
+
+  async reconnectLiveMonitor(callId) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (this.getMeta('terminal_at') || this.getMeta('completed_at')) return false;
+    if (this.monitorSocket && this.monitorSocket.readyState === WebSocket.OPEN) return true;
+    try {
+      const connected = await this.connectMonitor(callId);
+      if (connected) this.setMeta('live_monitor_reconnected_at', new Date().toISOString());
+      return connected;
+    } catch (error) {
+      this.setMeta('monitor_error', `live_reconnect_failed:${error.message}`);
+      console.error('[Live] bounded sideband reconnect failed', error);
+      return false;
+    }
   }
 
   async handleRealtimeMessage(raw) {
@@ -490,7 +678,19 @@ export class CallSession extends DurableObject {
     } catch {
       return;
     }
+    const voiceApi = normalizeOpenAIVoiceApi(
+      this.getMeta('voice_api'),
+      configuredOpenAIVoiceApi(this.env)
+    );
+    // A Live sideband mirrors every audio packet. Those packets need no application work and
+    // must not refresh the Durable Object alarm dozens of times per second.
+    if (voiceApi === 'live' && isReflectedLiveAudioEvent(message)) return;
     await this.scheduleFinalizeAlarm(message.type || 'realtime_message');
+
+    if (voiceApi === 'live') {
+      await this.handleLiveMessage(message);
+      return;
+    }
 
     if (message.type === 'session.created') {
       this.sessionCreated = true;
@@ -609,7 +809,108 @@ export class CallSession extends DurableObject {
     }
   }
 
-  async handleToolCall(toolName, args, toolCallId) {
+  async handleLiveMessage(message) {
+    if (message.type === 'session.started') {
+      this.sessionCreated = true;
+      this.setMeta('session_started_at', new Date().toISOString());
+      this.sendInitialResponse();
+      return;
+    }
+
+    if (message.type === 'session.updated') {
+      this.setMeta('session_updated_at', new Date().toISOString());
+      return;
+    }
+
+    if (message.type === 'session.instructions.appended') {
+      const acknowledgedId = String(message.client_event_id || '');
+      if (acknowledgedId && acknowledgedId === this.getMeta('greeting_event_id')) {
+        this.setMeta('greeting_acknowledged_at', new Date().toISOString());
+      }
+      return;
+    }
+
+    const transcript = liveTranscriptDelta(message);
+    if (transcript) {
+      this.appendLiveTranscriptDelta(transcript);
+      return;
+    }
+
+    if (message.type === 'session.delegation.created') {
+      const delegation = message.delegation || {};
+      const delegationId = String(delegation.id || message.delegation_id || '');
+      const priorOrder = this.getMetaJson('live_delegation_order');
+      const order = Array.isArray(priorOrder) ? priorOrder.map(String) : [];
+      if (delegationId && !order.includes(delegationId)) {
+        this.setMeta('live_delegation_order', JSON.stringify([...order, delegationId].slice(-64)));
+      }
+      this.setMeta('last_live_delegation', JSON.stringify({
+        id: delegationId,
+        target: delegation.target || '',
+        responseId: delegation.response_id || '',
+        offsetMs: message.offset_ms ?? null
+      }));
+      return;
+    }
+
+    const toolCall = liveFunctionCall(message);
+    if (toolCall) {
+      const handled = this.getMetaJson('handled_live_tool_call_ids');
+      const handledIds = Array.isArray(handled) ? handled.map(String) : [];
+      if (handledIds.includes(toolCall.callId)) return;
+      this.setMeta('handled_live_tool_call_ids', JSON.stringify([...handledIds, toolCall.callId].slice(-64)));
+      this.setMeta('last_live_tool_context', JSON.stringify({
+        delegationId: toolCall.delegationId,
+        responseId: toolCall.responseId,
+        callId: toolCall.callId
+      }));
+      await this.handleToolCall(toolCall.name, toolCall.arguments, toolCall.callId, {
+        voiceApi: 'live',
+        delegationId: toolCall.delegationId,
+        responseId: toolCall.responseId
+      });
+      return;
+    }
+
+    if (message.type === 'response.event') {
+      const nested = message.event || {};
+      if (nested.type === 'response.created') {
+        this.setMeta('last_response_id', nested.response?.id || nested.response_id || '');
+      } else if (nested.type === 'response.completed' || nested.type === 'response.failed') {
+        this.setMeta('last_response_status', nested.type.replace('response.', ''));
+      }
+      return;
+    }
+
+    if (message.type === 'session.usage.updated') {
+      this.setMeta('live_usage', JSON.stringify(message.usage || {}));
+      return;
+    }
+
+    if (message.type === 'session.closed') {
+      this.setMeta('live_close_reason', String(message.reason || ''));
+      if (message.usage) this.setMeta('live_usage', JSON.stringify(message.usage));
+      if (!this.getMeta('terminal_at')) this.setMeta('terminal_at', new Date().toISOString());
+      await this.finalizeCall();
+      return;
+    }
+
+    if (message.type === 'error') {
+      this.setMeta('last_error', JSON.stringify(message.error || message));
+      console.error('[Live] error', JSON.stringify(message.error || message));
+      const failedEventId = String(
+        message.client_event_id || message.error?.client_event_id || message.error?.event_id || ''
+      );
+      if (failedEventId && failedEventId === this.getMeta('greeting_event_id') &&
+          Number(this.getMeta('greeting_retry_count') || 0) < 1) {
+        this.setMeta('greeting_retry_count', '1');
+        this.initialResponseSent = false;
+        this.sendInitialResponse();
+      }
+    }
+  }
+
+  async handleToolCall(toolName, args, toolCallId, context = {}) {
     const phone = this.getMeta('patient_phone') || 'anonymous';
     const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
     let result;
@@ -638,6 +939,71 @@ export class CallSession extends DurableObject {
                 : 'Assessment recorded.'
             };
             this.addMessage('system', `Health assessment: ${JSON.stringify(args)}`);
+            if (serviceMode === 'selfcare') {
+              const urgent = String(args.severity || '') === 'urgent';
+              this.pushSelfcareTimelineEvent({
+                type: urgent ? 'escalation' : 'observation',
+                title: urgent
+                  ? `Voice line assessment (priority): ${(args.symptoms || []).slice(0, 3).join(', ').slice(0, 80) || 'urgent concern'}`
+                  : `Voice line assessment: ${(args.symptoms || []).slice(0, 3).join(', ').slice(0, 90) || 'concern recorded'}`,
+                detail: [args.medical_content, args.next_step].filter(Boolean).join(' ').slice(0, 290)
+              });
+            }
+            break;
+          }
+
+        case 'eka_find_patient':
+          {
+            const statedPhone = String(args.phone || '').trim();
+            const callerPhone = this.getMeta('patient_phone') || '';
+            const lookupPhone = statedPhone || (callerPhone && !callerPhone.startsWith('anonymous') ? callerPhone : '');
+            if (!lookupPhone) {
+              result = { success: false, found: 0, voiceResponse: 'No number to search yet — ask the caller which mobile number the record is under.' };
+              break;
+            }
+            const lookup = await selfcareBridgeRequest(this.env, '/api/bridge/patient-lookup?phone=' + encodeURIComponent(lookupPhone));
+            if (!lookup.ok) {
+              result = { success: false, error: 'record system unavailable', voiceResponse: 'The record system is not reachable right now — continue helping without it.' };
+              break;
+            }
+            result = { success: true, ...lookup.data };
+            const candidates = (lookup.data.patients || []).map((patient) => ({
+              patientRef: String(patient.patient_ref || patient.patientRef || patient.ref || ''),
+              name: String(patient.name || patient.full_name || patient.fullName || '')
+            })).filter((patient) => patient.patientRef && patient.name);
+            this.setMeta('selfcare_patient_candidates', JSON.stringify(candidates.slice(0, 10)));
+            this.addMessage('system', `Eka patient lookup: ${JSON.stringify({
+              mobile: lookup.data.mobile || lookupPhone,
+              matches: (lookup.data.patients || []).map((p) => ({ name: p.name, age: p.age }))
+            })}`);
+            break;
+          }
+
+        case 'eka_patient_context':
+          {
+            const ref = String(args.patient_ref || '').trim();
+            const confirmedName = String(args.confirmed_name || '').trim();
+            const candidates = this.getMetaJson('selfcare_patient_candidates');
+            const candidate = (Array.isArray(candidates) ? candidates : [])
+              .find((patient) => patient.patientRef === ref);
+            if (!/^[\w.-]{4,64}$/.test(ref) ||
+                args.identity_verified !== true ||
+                !candidate ||
+                !namesReasonablyMatch(confirmedName, candidate.name)) {
+              result = {
+                success: false,
+                error: 'verified patient identity is required',
+                voiceResponse: 'I could not safely match that name to the selected demo record. I can still help without opening it.'
+              };
+              break;
+            }
+            const context = await selfcareBridgeRequest(this.env, '/api/bridge/patient-context?ref=' + encodeURIComponent(ref));
+            if (!context.ok) {
+              result = { success: false, error: 'record system unavailable', voiceResponse: 'The record could not be opened right now — continue helping without it.' };
+              break;
+            }
+            result = { success: true, ...context.data };
+            this.addMessage('system', `Eka patient context: ${JSON.stringify(context.data).slice(0, 900)}`);
             break;
           }
 
@@ -654,18 +1020,33 @@ export class CallSession extends DurableObject {
             const cityFallbackOffer = this.getMetaJson('jozi_city_fallback_offer') || {};
             const currentPatientTurnSeq = Number(this.getMeta('patient_turn_seq') || 0);
             const currentPatientItemId = this.getMeta('last_patient_item_id') || '';
-            const callerAnsweredCityOffer = isImmediateJoziConsentTurn({
-              currentItemId: currentPatientItemId,
-              currentTurnSeq: currentPatientTurnSeq,
-              offer: cityFallbackOffer
-            });
             const callerArgs = stripUntrustedJoziInternalArgs(args);
+            const currentVoiceApi = normalizeOpenAIVoiceApi(
+              context.voiceApi || this.getMeta('voice_api'),
+              configuredOpenAIVoiceApi(this.env)
+            );
+            const cityConsentProvided = Object.prototype.hasOwnProperty.call(
+              callerArgs,
+              'city_fallback_consent_confirmed'
+            );
+            const liveCityDecision = currentVoiceApi === 'live'
+              ? this.liveConsentDecisionAfterOffer(cityFallbackOffer, context.delegationId)
+              : '';
+            const callerAnsweredCityOffer = currentVoiceApi === 'live'
+              ? ['confirmed', 'declined'].includes(liveCityDecision)
+              : isImmediateJoziConsentTurn({
+                  currentItemId: currentPatientItemId,
+                  currentTurnSeq: currentPatientTurnSeq,
+                  offer: cityFallbackOffer
+                });
             const mergedContext = mergeJoziSupportContext(pendingContext, callerArgs);
             const cityDecision = applyJoziCityFallbackDecision({
               contextualArgs: mergedContext,
               offer: cityFallbackOffer,
-              consentProvided: Object.prototype.hasOwnProperty.call(callerArgs, 'city_fallback_consent_confirmed'),
-              consentConfirmed: callerArgs.city_fallback_consent_confirmed,
+              consentProvided: cityConsentProvided,
+              consentConfirmed: currentVoiceApi === 'live'
+                ? liveCityDecision === 'confirmed'
+                : callerArgs.city_fallback_consent_confirmed,
               callerAnswered: callerAnsweredCityOffer
             });
             const contextualArgs = cityDecision.contextualArgs;
@@ -696,6 +1077,25 @@ export class CallSession extends DurableObject {
                   ...contextualArgs,
                   demo_enabled: joziDemoEnabled(this.env)
                 });
+            const liveCityConsentUnclear = currentVoiceApi === 'live' &&
+              cityFallbackOffer.active === true && cityConsentProvided &&
+              !['confirmed', 'declined'].includes(liveCityDecision);
+            if (liveCityConsentUnclear) {
+              const retryCount = Number(cityFallbackOffer.live_consent_retry_count || 0);
+              const closeOffer = retryCount >= 1;
+              result = {
+                success: false,
+                status: closeOffer ? 'city_consent_closed' : 'city_consent_unclear',
+                needs: [cityFallbackOffer.fallback_need].filter(Boolean),
+                city_fallback_need: cityFallbackOffer.fallback_need || '',
+                awaiting: closeOffer ? 'end_or_continue' : 'city_fallback_consent',
+                suggested_demo_action: '',
+                availability_confirmed: false,
+                voiceResponse: closeOffer
+                  ? "I didn't hear a clear yes, so I won't use the City route. We can try another nearby area."
+                  : 'I want to be sure I heard you correctly. Please say yes or no: should I use the City route as the last option?'
+              };
+            }
             this.setMeta('jozi_pending_lookup_context', JSON.stringify(
               buildJoziPendingLookupContext(contextualArgs, result)
             ));
@@ -708,7 +1108,12 @@ export class CallSession extends DurableObject {
                       ? result.needs.filter((need) => need !== result.city_fallback_need)
                       : [],
                     patient_turn_seq: Number(this.getMeta('patient_turn_seq') || 0),
-                    patient_item_id: this.getMeta('last_patient_item_id') || ''
+                    patient_item_id: this.getMeta('last_patient_item_id') || '',
+                    live_input_seq: this.liveInputCheckpoint(),
+                    live_delegation_id: context.delegationId || '',
+                    live_consent_retry_count: liveCityConsentUnclear
+                      ? Number(cityFallbackOffer.live_consent_retry_count || 0) + 1
+                      : Number(cityFallbackOffer.live_consent_retry_count || 0)
                   }
                 : {}
             ));
@@ -724,7 +1129,10 @@ export class CallSession extends DurableObject {
                     resource_id: consentResourceId,
                     action: consentAction,
                     patient_turn_seq: Number(this.getMeta('patient_turn_seq') || 0),
-                    patient_item_id: this.getMeta('last_patient_item_id') || ''
+                    patient_item_id: this.getMeta('last_patient_item_id') || '',
+                    live_input_seq: this.liveInputCheckpoint(),
+                    live_delegation_id: context.delegationId || '',
+                    live_consent_retry_count: 0
                   }
                 : {}
             ));
@@ -737,23 +1145,69 @@ export class CallSession extends DurableObject {
             const consentOffer = this.getMetaJson('jozi_demo_consent_offer') || {};
             const currentPatientTurnSeq = Number(this.getMeta('patient_turn_seq') || 0);
             const currentPatientItemId = this.getMeta('last_patient_item_id') || '';
-            const callerAnsweredAfterOffer = isImmediateJoziConsentTurn({
-              currentItemId: currentPatientItemId,
-              currentTurnSeq: currentPatientTurnSeq,
-              offer: consentOffer
-            });
-            result = coordinateJoziSupport({
-              ...args,
-              demo_enabled: joziDemoEnabled(this.env),
-              require_confirmed_consent: true,
-              caller_answered_after_offer: callerAnsweredAfterOffer,
-              require_offered_resource: true,
-              offered_resource_ids: consentOffer.resource_id ? [consentOffer.resource_id] : [],
-              require_offered_action: true,
-              required_action: consentOffer.action || '',
-              reference_id: generateId('JZDEMO')
-            });
-            if (result.success) this.setMeta('jozi_demo_consent_offer', '{}');
+            const currentVoiceApi = normalizeOpenAIVoiceApi(
+              context.voiceApi || this.getMeta('voice_api'),
+              configuredOpenAIVoiceApi(this.env)
+            );
+            const liveConsentDecision = currentVoiceApi === 'live'
+              ? this.liveConsentDecisionAfterOffer(consentOffer, context.delegationId)
+              : '';
+            const callerAnsweredAfterOffer = currentVoiceApi === 'live'
+              ? liveConsentDecision === 'confirmed'
+              : isImmediateJoziConsentTurn({
+                  currentItemId: currentPatientItemId,
+                  currentTurnSeq: currentPatientTurnSeq,
+                  offer: consentOffer
+                });
+            if (currentVoiceApi === 'live' && liveConsentDecision === 'declined') {
+              result = {
+                success: false,
+                status: 'demo_action_declined',
+                simulation: true,
+                submitted: false,
+                confirmed: false,
+                voiceResponse: "Okay, I won't start that demo step. What would help you next?"
+              };
+              this.setMeta('jozi_demo_consent_offer', '{}');
+            } else if (currentVoiceApi === 'live' && !callerAnsweredAfterOffer) {
+              const retryCount = Number(consentOffer.live_consent_retry_count || 0);
+              const closeOffer = retryCount >= 1;
+              result = {
+                success: false,
+                status: closeOffer ? 'demo_consent_closed' : 'demo_consent_unclear',
+                simulation: true,
+                submitted: false,
+                confirmed: false,
+                voiceResponse: closeOffer
+                  ? "I didn't hear a clear yes, so I won't start it. We can choose another kind of help."
+                  : 'I want to be sure I heard you correctly. Please say yes or no: should I start that demo step?'
+              };
+              this.setMeta('jozi_demo_consent_offer', closeOffer
+                ? '{}'
+                : JSON.stringify({
+                    ...consentOffer,
+                    live_delegation_id: context.delegationId || '',
+                    live_input_seq: this.liveInputCheckpoint(),
+                    live_spoken_input_seq: undefined,
+                    live_spoken_start_ms: undefined,
+                    live_spoken_end_ms: undefined,
+                    live_consent_retry_count: retryCount + 1
+                  }));
+            } else {
+              result = coordinateJoziSupport({
+                ...args,
+                consent_confirmed: currentVoiceApi === 'live' ? true : args.consent_confirmed,
+                demo_enabled: joziDemoEnabled(this.env),
+                require_confirmed_consent: true,
+                caller_answered_after_offer: callerAnsweredAfterOffer,
+                require_offered_resource: true,
+                offered_resource_ids: consentOffer.resource_id ? [consentOffer.resource_id] : [],
+                require_offered_action: true,
+                required_action: consentOffer.action || '',
+                reference_id: generateId('JZDEMO')
+              });
+              if (result.success) this.setMeta('jozi_demo_consent_offer', '{}');
+            }
           }
           this.addMessage('system', `Jozi demo coordination: ${JSON.stringify(result)}`);
           break;
@@ -815,6 +1269,45 @@ export class CallSession extends DurableObject {
           }
           break;
 
+        case 'coordinate_selfcare_demo':
+          {
+            if (args.consent_confirmed !== true) {
+              result = {
+                success: false,
+                status: 'demo_consent_required',
+                simulation: true,
+                submitted: false,
+                confirmed: false,
+                voiceResponse: 'Please ask the caller once whether they want that demo step, then wait for their answer.'
+              };
+              break;
+            }
+            const action = String(args.action || 'clinician_handoff');
+            const when = String(args.requested_time || 'the next available time');
+            const messages = {
+              appointment_request: `All set—the demo now shows a Singular Care appointment booked for ${when}. No clinic or clinician was contacted, so no real appointment was booked.`,
+              clinician_handoff: 'Please hold—the demo now shows a doctor joining shortly. No live doctor was contacted or connected.',
+              care_team_callback: `All set—the demo now shows a care-team callback requested for ${when}. No live callback request was sent.`
+            };
+            result = {
+              success: true,
+              status: 'simulation_only',
+              simulation: true,
+              submitted: false,
+              confirmed: false,
+              action,
+              reference_id: generateId('SCDEMO'),
+              requested_time: when,
+              voiceResponse: messages[action] || messages.clinician_handoff
+            };
+            this.pushSelfcareTimelineEvent({
+              type: 'coordination',
+              title: `Voice demo: ${action.replace(/_/g, ' ')}`,
+              detail: result.voiceResponse
+            });
+          }
+          break;
+
         case 'handle_emergency':
           if (modeIncludesJozi(serviceMode)) {
             this.setMeta('jozi_demo_consent_offer', '{}');
@@ -831,9 +1324,18 @@ export class CallSession extends DurableObject {
             : {
                 success: true,
                 emergency: true,
-                voiceResponse: 'This sounds serious and needs urgent medical attention. Please call emergency services or go to the nearest emergency facility now.'
+                voiceResponse: serviceMode === 'selfcare'
+                  ? 'This sounds serious and needs urgent medical attention now. In South Africa call one zero one seven seven, or one one two from a mobile; in Mozambique call one one two or go straight to the nearest banco de socorros.'
+                  : 'This sounds serious and needs urgent medical attention. Please call emergency services or go to the nearest emergency facility now.'
               };
           this.addMessage('system', `Emergency protocol: ${JSON.stringify(args)}`);
+          if (serviceMode === 'selfcare') {
+            this.pushSelfcareTimelineEvent({
+              type: 'escalation',
+              title: `Voice line emergency: ${(args.symptoms || []).slice(0, 3).join(', ').slice(0, 90) || args.safety_context || 'emergency guidance given'}`,
+              detail: 'Deterministic emergency guidance given on the Singular Care voice line; caller directed to urgent care.'
+            });
+          }
           if (!modeIncludesJozi(serviceMode)) {
             await this.sendPreferredFollowup(phone, `Emergency guidance: seek urgent care now. Symptoms: ${(args.symptoms || []).join(', ')}`);
           }
@@ -855,22 +1357,36 @@ export class CallSession extends DurableObject {
       error: result?.error || ''
     }));
 
-    this.sendRealtime({
-      type: 'conversation.item.create',
-      item: {
-        type: 'function_call_output',
-        call_id: toolCallId,
-        output: JSON.stringify(result)
-      }
-    });
-    this.sendRealtime({
-      type: 'response.create',
-      response: {
-        output_modalities: ['audio'],
-        max_output_tokens: numericEnv(this.env.OPENAI_MAX_OUTPUT_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS),
-        instructions: modeIncludesJozi(serviceMode) ? JOZI_ACTION_RESPONSE_INSTRUCTIONS : ACTION_RESPONSE_INSTRUCTIONS
-      }
-    });
+    const voiceApi = normalizeOpenAIVoiceApi(
+      context.voiceApi || this.getMeta('voice_api'),
+      configuredOpenAIVoiceApi(this.env)
+    );
+    if (voiceApi === 'live') {
+      const eventPrefix = `${context.delegationId || 'delegation'}_${toolCallId}`;
+      const liveResult = modeIncludesJozi(serviceMode)
+        ? compactLiveJoziToolResult(toolName, result)
+        : result;
+      this.queueLiveEvents(liveToolResultEvents(toolCallId, liveResult, eventPrefix));
+    } else {
+      this.sendRealtime({
+        type: 'conversation.item.create',
+        item: {
+          type: 'function_call_output',
+          call_id: toolCallId,
+          output: JSON.stringify(result)
+        }
+      });
+      this.sendRealtime({
+        type: 'response.create',
+        response: {
+          output_modalities: ['audio'],
+          max_output_tokens: numericEnv(this.env.OPENAI_MAX_OUTPUT_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS),
+          instructions: modeIncludesJozi(serviceMode)
+            ? JOZI_ACTION_RESPONSE_INSTRUCTIONS
+            : serviceMode === 'selfcare' ? SELFCARE_ACTION_RESPONSE_INSTRUCTIONS : ACTION_RESPONSE_INSTRUCTIONS
+        }
+      });
+    }
   }
 
   async finalizeCall() {
@@ -894,6 +1410,7 @@ export class CallSession extends DurableObject {
     const providerCallId = this.getMeta('provider_call_id');
     try {
       this.flushPendingInputTranscripts();
+      this.flushPendingLiveTranscripts();
 
       const messages = this.ctx.storage.sql
         .exec('SELECT role, text, created_at FROM messages ORDER BY id ASC')
@@ -923,6 +1440,23 @@ export class CallSession extends DurableObject {
         this.setMeta('caller_memory_error', error.message);
         console.error('[Memory] update failed', error);
       });
+
+      /* finalizeCall can be entered concurrently (idle alarm + Twilio completion callbacks race,
+         and completed_at is only set after the summary generation await) — the synchronous
+         check-and-set below keeps the demo record at one summary event per call. */
+      if (serviceMode === 'selfcare' && !this.getMeta('selfcare_summary_pushed')) {
+        this.setMeta('selfcare_summary_pushed', '1');
+        const urgency = summaries.providerFollowupReason === 'urgent'
+          ? 'emergency'
+          : summaries.providerFollowupNeeded ? 'priority' : null;
+        this.pushSelfcareTimelineEvent({
+          type: urgency ? 'escalation' : 'summary',
+          title: urgency
+            ? `Voice call handed to care team (${urgency})`
+            : `Voice call completed${summaries.languageUsed ? ' — ' + summaries.languageUsed : ''} · summary scribed`,
+          detail: (summaries.providerSummary || summaries.patientSummary || '').slice(0, 290)
+        });
+      }
 
       const phone = this.getMeta('patient_phone') || '';
       await this.sendPreferredFollowup(phone, buildPatientFollowupMessage(summaries, artifacts));
@@ -984,6 +1518,7 @@ export class CallSession extends DurableObject {
     const completedAt = this.getMeta('completed_at') || new Date().toISOString();
     this.ctx.storage.sql.exec('DELETE FROM messages');
     this.ctx.storage.sql.exec('DELETE FROM input_transcript_deltas');
+    this.ctx.storage.sql.exec('DELETE FROM live_transcript_deltas');
     this.ctx.storage.sql.exec('DELETE FROM metadata');
     this.setMeta('service_mode', normalizeServiceMode(serviceMode));
     this.setMeta('completed_at', completedAt);
@@ -992,8 +1527,9 @@ export class CallSession extends DurableObject {
 
   async scheduleFinalizeAlarm(reason = 'activity') {
     const idleMs = numericEnv(this.env.FINALIZE_IDLE_MS, DEFAULT_FINALIZE_IDLE_MS);
+    const rawDrainDeadline = this.getMeta('live_drain_deadline_ms');
     this.setMeta('finalize_alarm_reason', reason);
-    await this.ctx.storage.setAlarm(Date.now() + idleMs);
+    await this.ctx.storage.setAlarm(nextFinalizeAlarmAt(rawDrainDeadline, { idleMs }));
   }
 
   async persistTranscript(summaries, messages, artifacts) {
@@ -1044,11 +1580,19 @@ export class CallSession extends DurableObject {
   }
 
   async generateCallSummaries(messages, artifacts) {
-    if (modeIncludesJozi(this.getMeta('service_mode') || configuredServiceMode(this.env))) {
+    const summaryServiceMode = normalizeServiceMode(this.getMeta('service_mode') || configuredServiceMode(this.env));
+    if (modeIncludesJozi(summaryServiceMode)) {
       return joziFallbackSummaries(artifacts);
     }
     const apiKey = this.env.OPENAI_API_KEY;
     if (!apiKey) return fallbackSummaries(messages, artifacts);
+    const selfcareScribeLines = summaryServiceMode === 'selfcare' ? [
+      'This call was on the Singular Care self-care line for South Africa and Mozambique.',
+      'Write patientSummary in the language the caller mainly spoke — a Portuguese caller gets Portuguese.',
+      'Write providerSummary in English regardless of the call language.',
+      'If the transcript contains clinical-record lines (starting "Eka patient lookup:" or "Eka patient context:"), name the matched patient in providerSummary and fold that record context into the handoff; never copy internal record IDs into patientSummary.',
+      'If the call was about someone other than the caller (for example a child), clearly separate the caller and the patient in providerSummary.'
+    ] : [];
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -1075,7 +1619,8 @@ export class CallSession extends DurableObject {
               'testNeeded: true only when a diagnostic test is actually recommended or requested.',
               'Never generate post-call pickup or test IDs yourself. If the tool did not run during the call, state what information is still needed instead.',
               'Do not invent appointment numbers, referral IDs, pickup numbers, test request IDs, or provider locations in the summary. Use only the artifacts provided.',
-              'Make clear that generated logistics are simulated and unverified, not live pharmacy or clinic search results.'
+              'Make clear that generated logistics are simulated and unverified, not live pharmacy or clinic search results.',
+              ...selfcareScribeLines
             ].join('\n')
           },
           {
@@ -1112,6 +1657,15 @@ export class CallSession extends DurableObject {
     }
 
     return false;
+  }
+
+  /* Fire-and-forget: a lost event costs one line on the demo record; blocking the voice turn or
+     the finalize path on the bridge would cost the call. */
+  pushSelfcareTimelineEvent(event) {
+    selfcareBridgeRequest(this.env, '/api/bridge/event', {
+      method: 'POST',
+      body: { event: { channel: 'voice', lang: 'en', ...event } }
+    }).catch(() => {});
   }
 
   addMessage(role, text) {
@@ -1151,6 +1705,88 @@ export class CallSession extends DurableObject {
     this.setMeta('last_patient_text_partial', transcript);
   }
 
+  appendLiveTranscriptDelta({ role, delta, startMs, endMs, eventId }) {
+    const safeRole = role === 'assistant' ? 'assistant' : role === 'patient' ? 'patient' : '';
+    const chunk = String(delta || '');
+    if (!safeRole || !chunk) return;
+    const key = String(eventId || `${safeRole}:${startMs ?? ''}:${endMs ?? ''}:${chunk}`).slice(0, 1000);
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO live_transcript_deltas
+        (event_id, role, delta, start_ms, end_ms, received_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      key,
+      safeRole,
+      chunk,
+      startMs,
+      endMs,
+      new Date().toISOString()
+    );
+    if (safeRole === 'patient') {
+      this.setMeta('last_patient_text_partial', this.livePatientTextAfter(0).slice(-2000));
+    } else {
+      this.markPendingLiveOffersSpoken(startMs, endMs);
+    }
+  }
+
+  liveInputCheckpoint() {
+    const row = this.ctx.storage.sql
+      .exec("SELECT MAX(seq) AS seq FROM live_transcript_deltas WHERE role = 'patient'")
+      .toArray()[0];
+    return Number(row?.seq || 0);
+  }
+
+  livePatientTextAfter(checkpoint = 0) {
+    const rows = this.ctx.storage.sql
+      .exec(
+        "SELECT delta FROM live_transcript_deltas WHERE role = 'patient' AND seq > ? ORDER BY seq ASC",
+        Number(checkpoint) || 0
+      )
+      .toArray();
+    return rows.map((row) => String(row.delta || '')).join('');
+  }
+
+  livePatientTranscriptAfter(checkpoint = 0, afterMs = 0) {
+    const rows = this.ctx.storage.sql
+      .exec(
+        `SELECT delta, start_ms FROM live_transcript_deltas
+         WHERE role = 'patient' AND seq > ? AND start_ms IS NOT NULL AND start_ms >= ?
+         ORDER BY seq ASC`,
+        Number(checkpoint) || 0,
+        Number(afterMs) || 0
+      )
+      .toArray();
+    return {
+      text: rows.map((row) => String(row.delta || '')).join(''),
+      startMs: rows.length ? Number(rows[0].start_ms) : null
+    };
+  }
+
+  liveConsentDecisionAfterOffer(offer, currentDelegationId) {
+    const checkpoint = Number(offer?.live_spoken_input_seq);
+    const offerEndMs = Number(offer?.live_spoken_end_ms);
+    const delegationOrder = this.getMetaJson('live_delegation_order');
+    const transcript = Number.isFinite(checkpoint) && Number.isFinite(offerEndMs)
+      ? this.livePatientTranscriptAfter(checkpoint, offerEndMs)
+      : { text: '', startMs: null };
+    return classifyLiveConsentTurn({
+      offer,
+      currentDelegationId,
+      delegationOrder,
+      transcript: transcript.text,
+      inputStartMs: transcript.startMs
+    });
+  }
+
+  markPendingLiveOffersSpoken(startMs, endMs) {
+    for (const key of ['jozi_city_fallback_offer', 'jozi_demo_consent_offer']) {
+      const offer = this.getMetaJson(key);
+      const armed = markLiveOfferSpoken(offer, this.liveInputCheckpoint(), { startMs, endMs });
+      if (armed && JSON.stringify(armed) !== JSON.stringify(offer)) {
+        this.setMeta(key, JSON.stringify(armed));
+      }
+    }
+  }
+
   clearInputTranscriptDelta(itemId) {
     const id = String(itemId || '').trim();
     if (!id) return;
@@ -1167,6 +1803,24 @@ export class CallSession extends DurableObject {
     if (rows.length) {
       this.ctx.storage.sql.exec('DELETE FROM input_transcript_deltas');
       this.setMeta('pending_patient_transcripts_flushed', String(rows.length));
+    }
+  }
+
+  flushPendingLiveTranscripts() {
+    const rows = this.ctx.storage.sql
+      .exec('SELECT role, delta FROM live_transcript_deltas ORDER BY seq ASC')
+      .toArray();
+    const groups = [];
+    for (const row of rows) {
+      const role = row.role === 'assistant' ? 'assistant' : 'patient';
+      const last = groups.at(-1);
+      if (last?.role === role) last.text += String(row.delta || '');
+      else groups.push({ role, text: String(row.delta || '') });
+    }
+    for (const group of groups) this.addMessage(group.role, group.text);
+    if (rows.length) {
+      this.ctx.storage.sql.exec('DELETE FROM live_transcript_deltas');
+      this.setMeta('pending_live_transcripts_flushed', String(rows.length));
     }
   }
 
@@ -1194,23 +1848,57 @@ export class CallSession extends DurableObject {
     return true;
   }
 
+  queueLiveEvents(events) {
+    const pending = this.getMetaJson('pending_live_events');
+    const queued = Array.isArray(pending) ? pending : [];
+    const byId = new Map(queued.map((event) => [String(event?.event_id || generateId('LIVE')), event]));
+    for (const event of events || []) {
+      byId.set(String(event?.event_id || generateId('LIVE')), event);
+    }
+    this.setMeta('pending_live_events', JSON.stringify([...byId.values()].slice(-32)));
+    this.flushPendingLiveEvents();
+  }
+
+  flushPendingLiveEvents() {
+    const pending = this.getMetaJson('pending_live_events');
+    const events = Array.isArray(pending) ? pending : [];
+    if (!events.length) return true;
+    let sentCount = 0;
+    for (const event of events) {
+      if (!this.sendRealtime(event)) break;
+      sentCount += 1;
+    }
+    const remaining = events.slice(sentCount);
+    this.setMeta('pending_live_events', JSON.stringify(remaining));
+    return remaining.length === 0;
+  }
+
   sendInitialResponse() {
     if (this.initialResponseSent) return;
     const greeting = buildServiceGreeting(
       this.getMeta('service_mode') || configuredServiceMode(this.env),
       joziDemoEnabled(this.env)
     );
-    const sent = this.sendRealtime({
-      type: 'response.create',
-      response: {
-        output_modalities: ['audio'],
-        instructions: `Say exactly: "${greeting}"`
-      }
-    });
+    const voiceApi = normalizeOpenAIVoiceApi(
+      this.getMeta('voice_api'),
+      configuredOpenAIVoiceApi(this.env)
+    );
+    const greetingEventId = voiceApi === 'live' ? generateId('GREETING') : '';
+    const sent = voiceApi === 'live'
+      ? this.sendRealtime(liveGreetingEvent(greeting, greetingEventId))
+      : this.sendRealtime({
+          type: 'response.create',
+          response: {
+            output_modalities: ['audio'],
+            instructions: `Say exactly: "${greeting}"`
+          }
+        });
     if (sent) {
       this.initialResponseSent = true;
+      if (greetingEventId) this.setMeta('greeting_event_id', greetingEventId);
+      this.setMeta('initial_response_sent_at', new Date().toISOString());
       this.setMeta('last_stage', 'initial_response_requested');
-      console.log('[Realtime] initial response requested');
+      console.log(`[${voiceApi === 'live' ? 'Live' : 'Realtime'}] initial response requested`);
     }
   }
 
@@ -1261,14 +1949,26 @@ async function routeRequest(request, env, ctx) {
   const path = url.pathname;
 
   if (request.method === 'GET' && path === '/health') {
+    const defaultMode = configuredServiceMode(env);
     return Response.json({
       status: 'healthy',
       runtime: 'cloudflare-worker',
-      serviceMode: configuredServiceMode(env),
+      serviceMode: defaultMode,
       joziDemoMode: joziDemoEnabled(env),
-      lineProfiles: joziLineEnabled(env)
-        ? { twilioDefault: configuredServiceMode(env), twilioHealth: 'health', twilioJozi: 'jozi' }
-        : { twilioDefault: configuredServiceMode(env) },
+      lineConfigurationHealthy: activeLineConfigurationIsValid(env),
+      voiceApi: configuredOpenAIVoiceApi(env),
+      voiceModel: configuredOpenAIVoiceApi(env) === 'live'
+        ? env.OPENAI_LIVE_MODEL || DEFAULT_LIVE_MODEL
+        : env.OPENAI_REALTIME_MODEL || DEFAULT_REALTIME_MODEL,
+      liveBackendModel: configuredOpenAIVoiceApi(env) === 'live'
+        ? env.OPENAI_LIVE_BACKEND_MODEL || DEFAULT_LIVE_BACKEND_MODEL
+        : null,
+      lineProfiles: {
+        ...(lineModeEnabled(env, defaultMode) ? { twilioDefault: defaultMode } : {}),
+        ...(healthLineEnabled(env) ? { twilioHealth: 'health' } : {}),
+        ...(joziLineEnabled(env) ? { twilioJozi: 'jozi' } : {}),
+        ...(selfcareLineEnabled(env) ? { twilioSelfcare: 'selfcare' } : {})
+      },
       timestamp: new Date().toISOString()
     });
   }
@@ -1301,11 +2001,14 @@ async function routeRequest(request, env, ctx) {
   if (request.method === 'POST' && path.startsWith('/twilio/voice')) {
     if (!env.TWILIO_AUTH_TOKEN) return textResponse('Twilio verification is not configured.', 503);
     if (!await verifyTwilioRequest(request, env)) return textResponse('Invalid Twilio signature.', 403);
+    if (!activeLineConfigurationIsValid(env)) return textResponse('Voice line configuration is invalid.', 503);
     const normalizedVoicePath = path.toLowerCase().replace(/\/+$/, '');
     const forcedCodec = normalizedVoicePath.endsWith('/pcmu') ? 'PCMU' : normalizedVoicePath.endsWith('/pcma') ? 'PCMA' : '';
     const serviceMode = serviceModeForTwilioVoicePath(path, configuredServiceMode(env));
     if (!serviceMode) return textResponse('Not Found', 404);
+    if (serviceMode === 'health' && !healthLineEnabled(env)) return textResponse('Health line is not enabled.', 404);
     if (serviceMode === 'jozi' && !joziLineEnabled(env)) return textResponse('Jozi line is not enabled.', 404);
+    if (serviceMode === 'selfcare' && !selfcareLineEnabled(env)) return textResponse('Selfcare line is not enabled.', 404);
     return handleTwilioVoice(request, env, { forcedCodec, serviceMode });
   }
 
@@ -1353,8 +2056,10 @@ async function routeRequest(request, env, ctx) {
 }
 
 async function handleOpenAIWebhook(request, env, ctx, minimal) {
-  if ((modeIncludesJozi(configuredServiceMode(env)) || joziLineEnabled(env)) && !env.OPENAI_WEBHOOK_SECRET) {
-    return textResponse('Webhook verification is required for a Jozi-capable deployment.', 503);
+  const configuredVoiceApi = configuredOpenAIVoiceApi(env);
+  if ((configuredVoiceApi === 'live' || modeIncludesJozi(configuredServiceMode(env)) || joziLineEnabled(env)) &&
+      !env.OPENAI_WEBHOOK_SECRET) {
+    return textResponse('Webhook verification is required for this voice deployment.', 503);
   }
   const rawBody = await request.text();
   if (env.OPENAI_WEBHOOK_SECRET) {
@@ -1369,16 +2074,30 @@ async function handleOpenAIWebhook(request, env, ctx, minimal) {
     return textResponse('Bad JSON', 400);
   }
 
-  if (event?.type !== 'realtime.call.incoming') return textResponse('OK');
+  const incomingVoiceApi = voiceApiForIncomingEvent(event);
+  if (!incomingVoiceApi || incomingVoiceApi !== configuredVoiceApi) return textResponse('OK');
+  if (event?.type === 'live.transport.incoming' && event?.data?.type !== 'sip') return textResponse('OK');
 
-  const callId = getCallId(event);
+  const callId = voiceSessionId(event, incomingVoiceApi);
   if (callId) {
     const sipHeaders = event?.data?.sip_headers;
     const providerCallId = extractTwilioCallSidFromSipHeaders(sipHeaders);
     const profile = providerCallId ? await callerRegistry(env).getCallProfile(providerCallId) : null;
-    if (!profile || (profile.serviceMode === 'jozi' && !joziLineEnabled(env))) {
+    const profileDestinationMatches = profile ? twilioLineBindingMatches({
+      serviceMode: profile.serviceMode,
+      to: profile.destinationPhone,
+      healthNumber: env.HEALTH_PHONE_NUMBER,
+      joziNumber: env.JOZI_PHONE_NUMBER,
+      selfcareNumber: env.SELFCARE_PHONE_NUMBER
+    }) : false;
+    if (!profile ||
+        !activeLineConfigurationIsValid(env) ||
+        !profileDestinationMatches ||
+        (profile.serviceMode === 'health' && !healthLineEnabled(env)) ||
+        (profile.serviceMode === 'jozi' && !joziLineEnabled(env)) ||
+        (profile.serviceMode === 'selfcare' && !selfcareLineEnabled(env))) {
       console.error('[Routing] Rejecting call without one trusted, enabled line profile', JSON.stringify({ callId }));
-      ctx.waitUntil(rejectOpenAICall(env, callId).catch((error) => {
+      ctx.waitUntil(rejectOpenAICall(env, callId, 603, incomingVoiceApi).catch((error) => {
         console.error('[Routing] Could not reject unprofiled call', error);
       }));
       return textResponse('OK');
@@ -1386,16 +2105,17 @@ async function handleOpenAIWebhook(request, env, ctx, minimal) {
     ctx.waitUntil(callSession(env, callId).acceptAndMonitor(event, profile.callerPhone, {
       minimal,
       serviceMode: profile.serviceMode,
-      providerCallId
+      providerCallId,
+      voiceApi: incomingVoiceApi
     }));
   }
 
   return textResponse('OK');
 }
 
-async function rejectOpenAICall(env, callId, statusCode = 603) {
+async function rejectOpenAICall(env, callId, statusCode = 603, voiceApi = configuredOpenAIVoiceApi(env)) {
   const apiKey = requireEnv(env, 'OPENAI_API_KEY');
-  const response = await fetch(`https://api.openai.com/v1/realtime/calls/${encodeURIComponent(callId)}/reject`, {
+  const response = await fetch(openAIRejectUrl(voiceApi, callId), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -1412,7 +2132,9 @@ async function handleSignalWireVoice(request, env) {
   await readForm(request);
 
   const projectId = requireEnv(env, 'OPENAI_PROJECT_ID');
-  const sipUri = `sip:${projectId}@sip.api.openai.com;transport=tls`;
+  const sipUri = buildOpenAISipUri(projectId, {}, {
+    secureMedia: configuredOpenAIVoiceApi(env) === 'live'
+  });
   const codec = env.SIP_CODECS || mapG711ToSip(env.TELEPHONY_CODEC);
   const codecsAttr = codec ? ` codecs="${escapeXml(codec)}"` : '';
   const lineLabel = modeIncludesJozi(configuredServiceMode(env)) ? 'Jozi health and support line' : 'healthcare assistant';
@@ -1436,14 +2158,15 @@ async function handleTwilioVoice(request, env, options = {}) {
     serviceMode,
     to: form.To,
     healthNumber: env.HEALTH_PHONE_NUMBER,
-    joziNumber: env.JOZI_PHONE_NUMBER
+    joziNumber: env.JOZI_PHONE_NUMBER,
+    selfcareNumber: env.SELFCARE_PHONE_NUMBER
   })) {
     return xmlResponse('<Response><Say>This phone number is not configured for this line.</Say><Hangup/></Response>', 403);
   }
   const callerPhone = asE164(form.From || '');
   await callerRegistry(env).setCallProfile(callSid, {
     serviceMode,
-    callerPhone: serviceMode === 'health' && isUsablePatientPhone(callerPhone) ? callerPhone : null,
+    callerPhone: ['health', 'selfcare'].includes(serviceMode) && isUsablePatientPhone(callerPhone) ? callerPhone : null,
     destinationPhone: form.To
   });
 
@@ -1452,12 +2175,16 @@ async function handleTwilioVoice(request, env, options = {}) {
   // Twilio reserves the X-Twilio-* namespace. Use our own extension header so
   // the provider CallSid reaches the signed OpenAI webhook for profile lookup.
   const sipHeaders = { 'x-prismind-call-id': callSid };
-  const sipUri = buildOpenAISipUri(projectId, sipHeaders);
+  const sipUri = buildOpenAISipUri(projectId, sipHeaders, {
+    secureMedia: configuredOpenAIVoiceApi(env) === 'live'
+  });
   const codec = options.forcedCodec || env.TWILIO_SIP_CODECS || mapG711ToSip(env.TELEPHONY_CODEC);
   const codecsAttr = codec ? ` codecs="${escapeXml(codec)}"` : '';
   const statusUrl = `${origin}/twilio/status`;
   const dialStatusUrl = `${origin}/twilio/dial-status`;
-  const lineLabel = modeIncludesJozi(serviceMode) ? 'Jozi support line' : 'healthcare assistant';
+  const lineLabel = modeIncludesJozi(serviceMode)
+    ? 'Jozi support line'
+    : serviceMode === 'selfcare' ? 'Singular Care line' : 'healthcare assistant';
 
   return xmlResponse(`<Response>
   <Say>Connecting to the ${escapeXml(lineLabel)}, please wait.</Say>
@@ -1499,7 +2226,7 @@ async function handleTwilioCompletionCallback(request, env, ctx, returnTwiml) {
       if (openaiCallId) {
         matched += 1;
         ctx.waitUntil((async () => {
-          await callSession(env, openaiCallId).forceFinalize(`twilio:${status}`);
+          await callSession(env, openaiCallId).providerEnded(`twilio:${status}`);
           await callerRegistry(env).deleteCallMapping(providerCallId);
           await callerRegistry(env).deleteCallProfile(providerCallId);
         })());
@@ -2670,9 +3397,15 @@ function buildMedicalInstructions(memoryContext) {
   return memoryInstructions ? `${MEDICAL_INSTRUCTIONS}\n\n${memoryInstructions}` : MEDICAL_INSTRUCTIONS;
 }
 
+function buildSelfcareInstructions(memoryContext) {
+  const memoryInstructions = buildMemoryInstructions(memoryContext);
+  return memoryInstructions ? `${SELFCARE_INSTRUCTIONS}\n\n${memoryInstructions}` : SELFCARE_INSTRUCTIONS;
+}
+
 function buildServiceInstructions(mode, memoryContext) {
   const normalized = normalizeServiceMode(mode);
   if (normalized === 'health') return buildMedicalInstructions(memoryContext);
+  if (normalized === 'selfcare') return buildSelfcareInstructions(memoryContext);
   if (normalized === 'jozi') return JOZI_SUPPORT_INSTRUCTIONS;
   return [
     JOZI_SUPPORT_INSTRUCTIONS,
@@ -2680,7 +3413,97 @@ function buildServiceInstructions(mode, memoryContext) {
   ].join('\n\n');
 }
 
+function buildLiveFrontendInstructions(mode) {
+  const normalized = normalizeServiceMode(mode);
+  const identity = normalized === 'selfcare'
+    ? 'You are the Singular Care self-care companion for callers in South Africa and Mozambique.'
+    : modeIncludesJozi(normalized)
+      ? 'You are the Jozi My Jozi support companion for people in Johannesburg, including callers without stable housing, money, transport, privacy, a kitchen, or a safe place to wash.'
+      : 'You are a warm telephone health adviser for callers in low-resource settings.';
+  const language = normalized === 'selfcare'
+    ? 'Begin in English and switch fully to Portuguese when the caller uses Portuguese. Follow the caller when they use another language.'
+    : 'Begin in English. Follow the caller into another language when you understand it confidently.';
+  const localDelivery = modeIncludesJozi(normalized)
+    ? 'Use a gentle, natural South African English cadence and familiar local pronunciation. Never exaggerate or caricature an accent, and pronounce Johannesburg place names carefully.'
+    : '';
+  const capabilities = normalized === 'selfcare'
+    ? [
+        '- Clinical reasoning: everyday symptoms, chronic care, maternal and mental wellbeing, red flags, and safe next steps.',
+        '- Patient records: find a demo patient, verify identity, read relevant clinical context, and record an assessment.',
+        '- Emergency routing: give the correct country-specific urgent-care action.',
+        '- Demo coordination: after a clear yes, show one simulated appointment, clinician handoff, or care-team callback.'
+      ]
+    : modeIncludesJozi(normalized)
+      ? [
+          '- Verified Johannesburg support: MES-first shelter and food routes, clinics, mental health, social support, safe community space, crisis help, and Zlto rewards.',
+          '- Careful reasoning: interpret ordinary speech in the caller\'s housing and safety context and preserve needs across turns.',
+          '- Safe actions: verified service details, crisis routing, and consent-bound demo connections or bookings.'
+        ]
+      : [
+          '- Clinical reasoning: symptom assessment, red flags, self-care, provider review, refills, tests, appointments, and referrals.',
+          '- Provider and emergency routing: identify the safest next action and execute supported demo logistics.'
+        ];
+
+  return [
+    identity,
+    'Speak warmly and naturally, at an unhurried pace. Be caring, clear, and direct rather than formal or overly cheerful.',
+    'Use one or two short sentences for ordinary turns. A verified tool result may use up to four short sentences when needed. Ask at most one question. Acknowledge distress briefly before the next helpful step.',
+    language,
+    localDelivery,
+    'Backchannel policy: Use moderate, quiet acknowledgements without competing with the caller.',
+    'Interruption policy: Stop the main response when the caller interrupts and listen to their correction or added need.',
+    '',
+    'Delegation policy:',
+    'Backend tools:',
+    ...capabilities,
+    '',
+    'Delegate to the backend when:',
+    '- The request needs clinical or safety judgment, a destination or phone number, record information, a tool, a crisis route, or a completed demo action.',
+    '- The caller changes, adds to, confirms, or declines work already discussed.',
+    '',
+    'Do not delegate to the backend when:',
+    modeIncludesJozi(normalized)
+      ? '- The caller is only greeting you or asking you to repeat an already confirmed result. Delegate every substantive support request and let the backend choose any clarification.'
+      : '- The caller is only greeting you, asking you to repeat an already confirmed result, or you need one brief clarification to understand the request.',
+    '',
+    'Delegate before giving any answer that depends on backend work. Do not guess a result, provider fact, availability, booking, transfer, or record detail while waiting.',
+    modeIncludesJozi(normalized)
+      ? 'If the backend gives one question, speak that question and stop. Do not add, repeat, or answer a second question yourself.'
+      : 'When the backend gives one question, ask it once and wait.',
+    modeIncludesJozi(normalized)
+      ? 'Never default to City of Johannesburg from memory. Never give generic self-care advice that assumes shelter, hot water, food, money, transport, or privacy.'
+      : 'Never diagnose, prescribe, or claim an appointment or service outcome before the backend confirms it.'
+  ].join('\n');
+}
+
+function buildLiveBackendInstructions(mode, serviceInstructions) {
+  const normalized = normalizeServiceMode(mode);
+  const backendServiceInstructions = normalized === 'selfcare'
+    ? serviceInstructions
+        .replace(/## INITIAL GREETING[\s\S]*?(?=\n## LANGUAGE RULES)/, '')
+        .replace(/## VOICE CONSTRAINTS[\s\S]*?(?=\n\n## PRIOR PHONE CONTEXT|$)/, '')
+        .trim()
+    : serviceInstructions;
+  const resultInstructions = modeIncludesJozi(normalized)
+    ? JOZI_ACTION_RESPONSE_INSTRUCTIONS
+    : normalized === 'selfcare' ? SELFCARE_ACTION_RESPONSE_INSTRUCTIONS : ACTION_RESPONSE_INSTRUCTIONS;
+  return [
+    '## GPT-LIVE BACKEND ROLE',
+    'You are the reasoning and tool backend for a live phone conversation. The voice frontend handles pacing, empathy, and interruptions; you decide the safe next step and select tools.',
+    'Follow every business, safety, privacy, and consent rule below. Use the latest caller correction. Never infer permission for an action.',
+    'When a tool is required, call it. After its result, return only concise, verified facts and the next conversational step for the voice frontend. Do not invent missing facts or successful outcomes.',
+    '',
+    backendServiceInstructions,
+    '',
+    '## RESULT DELIVERY RULES',
+    resultInstructions
+  ].join('\n');
+}
+
 function buildMinimalInstructions(mode) {
+  if (normalizeServiceMode(mode) === 'selfcare') {
+    return 'You are the Singular Care self-care line for South Africa and Mozambique. Speak English or Portuguese following the caller, ask one short question at a time, use the record tools only with the caller\'s confirmed identity, and escalate emergencies first.';
+  }
   return modeIncludesJozi(mode)
     ? 'You are the caring Jozi My Jozi support line. Understand ordinary speech, remember needs and landmarks across turns, ask one short question at a time, use only verified support tools for destination facts, and escalate immediate danger first.'
     : 'You are a health support agent.';
@@ -2724,14 +3547,6 @@ function buildMemoryContextText(memoryContext) {
     if (parts.length) lines.push(`- ${parts.join(' | ')}`);
   }
   return lines.join('\n').slice(0, 1600);
-}
-
-function buildOpenAISipUri(projectId, headers = {}) {
-  const base = `sip:${projectId}@sip.api.openai.com;transport=tls`;
-  const params = Object.entries(headers)
-    .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
-    .map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(String(value))}`);
-  return params.length ? `${base}?${params.join('&')}` : base;
 }
 
 function extractConfiguredTranscription(session) {
@@ -2961,11 +3776,56 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
     }] : [])
   ];
 
+  const selfcareTools = [
+    {
+      type: 'function',
+      name: 'eka_find_patient',
+      description: "Look up patient record(s) in the clinical system by mobile number. Call with use_caller_number true first; if nothing is found, ask which mobile number the record is under and call again with phone. Returns every profile on that number — one number can hold a family. Verify the caller's identity before revealing anything it returns.",
+      parameters: {
+        type: 'object',
+        properties: {
+          phone: { type: 'string', description: 'Mobile number the caller says the record is under, in any common format (e.g. 082 000 0001 or +27 82 000 0001).' },
+          use_caller_number: { type: 'boolean', description: 'True to search the number the caller is dialling from.' }
+        }
+      }
+    },
+    {
+      type: 'function',
+      name: 'eka_patient_context',
+      description: 'Fetch recent clinical context (profile, recent visits, current medications) for ONE patient, only after the caller has confirmed who the call is about and verified their identity. Use the patient_ref returned by eka_find_patient.',
+      parameters: {
+        type: 'object',
+        properties: {
+          patient_ref: { type: 'string' },
+          confirmed_name: { type: 'string', description: 'Name the caller just stated for this record.' },
+          identity_verified: { type: 'boolean', description: 'True only after the caller stated a name that reasonably matches this selected record.' }
+        },
+        required: ['patient_ref', 'confirmed_name', 'identity_verified']
+      }
+    },
+    {
+      type: 'function',
+      name: 'coordinate_selfcare_demo',
+      description: 'Complete one simulated Singular Care appointment, clinician handoff, or care-team callback only after the caller clearly accepts the offer. The result positively shows the demo state and then clarifies that no external action occurred.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['appointment_request', 'clinician_handoff', 'care_team_callback'] },
+          requested_time: { type: 'string' },
+          reason: { type: 'string' },
+          consent_confirmed: { type: 'boolean' }
+        },
+        required: ['action', 'consent_confirmed']
+      }
+    }
+  ];
+
   const normalized = normalizeServiceMode(mode);
   if (normalized === 'health') return healthTools;
   const emergencyTool = healthTools.find((tool) => tool.name === 'handle_emergency');
-  if (normalized === 'jozi') return [emergencyTool, ...supportTools];
   const assessmentTool = healthTools.find((tool) => tool.name === 'health_assessment');
+  if (normalized === 'selfcare') return [assessmentTool, emergencyTool, ...selfcareTools];
+  if (normalized === 'jozi') return [emergencyTool, ...supportTools];
   return [assessmentTool, emergencyTool, ...supportTools];
 }
 
@@ -3697,17 +4557,85 @@ function configuredServiceMode(env) {
   return normalizeServiceMode(env.SERVICE_MODE || 'health');
 }
 
+function configuredOpenAIVoiceApi(env) {
+  return normalizeOpenAIVoiceApi(env.OPENAI_VOICE_API || 'live');
+}
+
 function joziDemoEnabled(env) {
   return String(env.JOZI_DEMO_MODE || 'false').toLowerCase() === 'true';
 }
 
 function realtimeVoiceForMode(env, serviceMode) {
   if (modeIncludesJozi(serviceMode)) return env.JOZI_REALTIME_VOICE || 'marin';
+  if (normalizeServiceMode(serviceMode) === 'selfcare') {
+    return env.SELFCARE_REALTIME_VOICE || env.OPENAI_REALTIME_VOICE || DEFAULT_VOICE;
+  }
   return env.OPENAI_REALTIME_VOICE || DEFAULT_VOICE;
 }
 
 function joziLineEnabled(env) {
   return String(env.JOZI_LINE_ENABLED || 'false').toLowerCase() === 'true';
+}
+
+function healthLineEnabled(env) {
+  return String(env.HEALTH_LINE_ENABLED || 'true').toLowerCase() !== 'false';
+}
+
+function selfcareLineEnabled(env) {
+  return String(env.SELFCARE_LINE_ENABLED || 'false').toLowerCase() === 'true';
+}
+
+function lineModeEnabled(env, mode) {
+  const normalized = normalizeServiceMode(mode);
+  if (normalized === 'health') return healthLineEnabled(env);
+  if (normalized === 'jozi') return joziLineEnabled(env);
+  if (normalized === 'selfcare') return selfcareLineEnabled(env);
+  return false;
+}
+
+function activeLineConfigurationIsValid(env) {
+  const numbers = [];
+  if (healthLineEnabled(env)) numbers.push(asE164(env.HEALTH_PHONE_NUMBER || ''));
+  if (joziLineEnabled(env)) numbers.push(asE164(env.JOZI_PHONE_NUMBER || ''));
+  if (selfcareLineEnabled(env)) numbers.push(asE164(env.SELFCARE_PHONE_NUMBER || ''));
+  return numbers.length > 0 && numbers.every(Boolean) && new Set(numbers).size === numbers.length;
+}
+
+function optionalLiveServiceTier(value) {
+  const tier = String(value || '').trim().toLowerCase();
+  return ['auto', 'default', 'flex', 'priority'].includes(tier) ? tier : undefined;
+}
+
+/* The Singular Care demo Worker owns the Eka credentials and the demo timeline; this Worker only
+   holds a bearer token for its bridge. Short timeout — a voice turn cannot wait long. */
+const DEFAULT_SELFCARE_BRIDGE_TIMEOUT_MS = 3500;
+async function selfcareBridgeRequest(env, path, options = {}) {
+  if (!env.SELFCARE_BRIDGE_URL || !env.SELFCARE_BRIDGE_TOKEN) {
+    return { ok: false, error: 'bridge not configured' };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort('timeout'),
+    numericEnv(env.SELFCARE_BRIDGE_TIMEOUT_MS, DEFAULT_SELFCARE_BRIDGE_TIMEOUT_MS)
+  );
+  try {
+    const response = await fetch(String(env.SELFCARE_BRIDGE_URL).replace(/\/$/, '') + path, {
+      method: options.method || 'GET',
+      headers: {
+        Authorization: `Bearer ${env.SELFCARE_BRIDGE_TOKEN}`,
+        ...(options.body ? { 'Content-Type': 'application/json' } : {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, error: `bridge ${response.status}`, data };
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error).slice(0, 200) };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function callerMemoryAllowed(env, serviceMode = configuredServiceMode(env)) {

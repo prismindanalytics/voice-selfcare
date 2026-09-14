@@ -159,7 +159,7 @@ test('emergency routing can be called for fire or violence without inventing sym
 
 test('Jozi mode refuses unsigned OpenAI webhooks', () => {
   assert.match(workerSource, /modeIncludesJozi\(configuredServiceMode\(env\)\) \|\| joziLineEnabled\(env\)/);
-  assert.match(workerSource, /Webhook verification is required for a Jozi-capable deployment/);
+  assert.match(workerSource, /Webhook verification is required for this voice deployment/);
 });
 
 test('Twilio CallSid binds a signed incoming OpenAI call to one line profile', () => {
@@ -168,8 +168,9 @@ test('Twilio CallSid binds a signed incoming OpenAI call to one line profile', (
   assert.doesNotMatch(workerSource, /x-twilio-parentcallsid/i);
   assert.match(workerSource, /getCallProfile\(providerCallId\)/);
   assert.match(workerSource, /Rejecting call without one trusted, enabled line profile/);
-  assert.match(workerSource, /rejectOpenAICall\(env, callId\)/);
-  assert.match(workerSource, /event\?\.type !== 'realtime\.call\.incoming'/);
+  assert.match(workerSource, /rejectOpenAICall\(env, callId, 603, incomingVoiceApi\)/);
+  assert.match(workerSource, /incomingVoiceApi !== configuredVoiceApi/);
+  assert.match(workerSource, /event\?\.type === 'live\.transport\.incoming'/);
   assert.match(workerSource, /deleteCallProfile\(providerCallId\)/);
   assert.doesNotMatch(workerSource, /serviceModeFromSipHeaders/);
 });

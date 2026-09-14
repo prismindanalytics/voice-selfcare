@@ -162,7 +162,10 @@ test('voice routing stores the verified caller and both verified line attributes
   assert.match(voiceHandler, /setCallProfile\s*\(\s*callSid\s*,\s*\{/);
   assert.match(voiceHandler, /serviceMode/);
   assert.match(voiceHandler, /const\s+callerPhone\s*=\s*asE164\(form\.From/);
-  assert.match(voiceHandler, /callerPhone\s*:\s*serviceMode\s*===\s*'health'\s*&&\s*isUsablePatientPhone\(callerPhone\)\s*\?\s*callerPhone\s*:\s*null/);
+  // Caller phone may be stored only for the persisting lines (health, selfcare) — never for the
+  // privacy-first Jozi profile. The allowlist form makes 'jozi' impossible by construction.
+  assert.match(voiceHandler, /callerPhone\s*:\s*\['health',\s*'selfcare'\]\.includes\(serviceMode\)\s*&&\s*isUsablePatientPhone\(callerPhone\)\s*\?\s*callerPhone\s*:\s*null/);
+  assert.doesNotMatch(voiceHandler, /\[[^\]]*'jozi'[^\]]*\]\.includes\(serviceMode\)\s*&&\s*isUsablePatientPhone/);
   assert.match(voiceHandler, /destinationPhone\s*:\s*(?:asE164\()?form\.To/);
 });
 
@@ -175,7 +178,10 @@ test('missing or unknown OpenAI CallSid profiles reject instead of inheriting he
   assert.match(webhookHandler, /extractTwilioCallSidFromSipHeaders\(sipHeaders\)/);
   assert.match(webhookHandler, /providerCallId\s*\?\s*await callerRegistry\(env\)\.getCallProfile\(providerCallId\)\s*:\s*null/);
   assert.match(webhookHandler, /getCallProfile\(providerCallId\)/);
-  assert.match(webhookHandler, /if\s*\(\s*!(?:storedProfile|profile)[\s\S]{0,500}rejectOpenAICall\(env, callId\)/);
+  assert.match(webhookHandler, /to:\s*profile\.destinationPhone/);
+  assert.match(webhookHandler, /!profileDestinationMatches/);
+  assert.match(webhookHandler, /if\s*\(\s*!profile\s*\|\|/);
+  assert.match(webhookHandler, /rejectOpenAICall\(env, callId, 603, incomingVoiceApi\)/);
   assert.doesNotMatch(webhookHandler, /let\s+serviceMode\s*=\s*configuredServiceMode\(env\)/);
   assert.doesNotMatch(webhookHandler, /extractCallerPhoneFromSipHeaders\(sipHeaders\)/);
 });

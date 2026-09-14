@@ -1541,7 +1541,7 @@ PRIVACY
 
 export function normalizeServiceMode(value) {
   const mode = String(value || 'health').trim().toLowerCase();
-  return ['health', 'jozi', 'combined'].includes(mode) ? mode : 'health';
+  return ['health', 'jozi', 'combined', 'selfcare'].includes(mode) ? mode : 'health';
 }
 
 export function modeIncludesJozi(mode) {
@@ -1571,6 +1571,9 @@ export function buildServiceGreeting(mode, demoEnabled = false) {
   const normalized = normalizeServiceMode(mode);
   if (normalized === 'health') {
     return "Hello, thank you for calling. This is your health advisor. I'm here to help. What health concern can we talk through today?";
+  }
+  if (normalized === 'selfcare') {
+    return "Hello, you've reached the Singular Care line. I can help in English — ou em português. How can I help you today?";
   }
   const demoLabel = demoEnabled ? ' demo' : '';
   if (normalized === 'jozi') {

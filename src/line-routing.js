@@ -1,14 +1,16 @@
 export function normalizeLineServiceMode(value, fallback = 'health') {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'health' || normalized === 'jozi') return normalized;
+  if (normalized === 'health' || normalized === 'jozi' || normalized === 'selfcare') return normalized;
 
   const fallbackMode = String(fallback || '').trim().toLowerCase();
-  return fallbackMode === 'jozi' ? 'jozi' : 'health';
+  if (fallbackMode === 'jozi' || fallbackMode === 'selfcare') return fallbackMode;
+  return 'health';
 }
 
 export function serviceModeForTwilioVoicePath(path, fallback = 'health') {
   const normalizedPath = String(path || '').toLowerCase().replace(/\/+$/, '') || '/';
   if (/^\/twilio\/voice\/jozi(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) return 'jozi';
+  if (/^\/twilio\/voice\/selfcare(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) return 'selfcare';
   if (/^\/twilio\/voice\/health(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) return 'health';
   if (/^\/twilio\/voice(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) {
     return normalizeLineServiceMode(fallback);
@@ -16,12 +18,19 @@ export function serviceModeForTwilioVoicePath(path, fallback = 'health') {
   return null;
 }
 
-export function twilioLineBindingMatches({ serviceMode, to, healthNumber, joziNumber }) {
+export function twilioLineBindingMatches({ serviceMode, to, healthNumber, joziNumber, selfcareNumber }) {
   const mode = String(serviceMode || '').trim().toLowerCase();
-  if (!['health', 'jozi'].includes(mode)) return false;
+  if (!['health', 'jozi', 'selfcare'].includes(mode)) return false;
   const destination = normalizePhone(to);
   const health = normalizePhone(healthNumber);
   const jozi = normalizePhone(joziNumber);
+  /* Selfcare may reuse either legacy number. Route-enable flags decide which named path is live,
+     while Twilio's URL-bound signature prevents a request from being replayed onto another path. */
+  if (mode === 'selfcare') {
+    const selfcare = normalizePhone(selfcareNumber);
+    if (!selfcare) return false;
+    return Boolean(destination && destination === selfcare);
+  }
   if (!health || !jozi || health === jozi) return false;
   const expected = mode === 'jozi' ? jozi : health;
   return Boolean(destination && expected && destination === expected);
@@ -86,6 +95,53 @@ export function extractCallerPhoneFromSipHeaders(headers) {
   if (fromValues.length !== 1) return null;
   const matches = [...fromValues[0].matchAll(/(?:sip|tel):(\+\d{8,15})(?=@|[;>\s]|$)/ig)];
   return matches.length === 1 ? matches[0][1] : null;
+}
+
+export function namesReasonablyMatch(statedName, recordName) {
+  const stated = normalizePersonName(statedName);
+  const recorded = normalizePersonName(recordName);
+  if (!stated.length || !recorded.length || stated.length > recorded.length) return false;
+  return stated.every((token, index) => nameTokenMatches(token, recorded[index]));
+}
+
+function normalizePersonName(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z\s-]/g, ' ')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+}
+
+function nameTokenMatches(stated, recorded) {
+  if (stated === recorded) return true;
+  if (!stated || !recorded || stated[0] !== recorded[0] || Math.min(stated.length, recorded.length) < 5) {
+    return false;
+  }
+  const distance = levenshteinDistance(stated, recorded);
+  return distance <= Math.min(2, Math.floor(Math.max(stated.length, recorded.length) / 4));
+}
+
+function levenshteinDistance(left, right) {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitution = previous[rightIndex - 1] +
+        (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        substitution
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length];
 }
 
 function normalizePhone(value) {

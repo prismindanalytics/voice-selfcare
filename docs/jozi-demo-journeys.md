@@ -336,11 +336,12 @@ The line completes the demo action positively, then immediately distinguishes th
 
 ## Pre-demo check
 
-- `SERVICE_MODE=health` so the default and explicit health paths retain the health assistant.
-- `JOZI_LINE_ENABLED=true`, with `HEALTH_PHONE_NUMBER=+12063098528` and `JOZI_PHONE_NUMBER=+14255173281`.
+- `OPENAI_VOICE_API=live`, `OPENAI_LIVE_MODEL=gpt-live-1`, and `OPENAI_LIVE_BACKEND_MODEL=gpt-5.6-terra`.
+- `HEALTH_LINE_ENABLED=false`, `SELFCARE_LINE_ENABLED=true`, and `JOZI_LINE_ENABLED=true`.
+- `SELFCARE_PHONE_NUMBER=+12063098528` and `JOZI_PHONE_NUMBER=+14255173281`.
 - `JOZI_DEMO_MODE=true`; the Jozi call profile still forces caller memory and automatic follow-up off even when the health profile enables them.
 - `JOZI_TRANSCRIPT_TTL_DAYS=7`
-- Confirm both `OPENAI_WEBHOOK_SECRET` and `TWILIO_AUTH_TOKEN` are set; unsigned OpenAI and Twilio requests are refused.
+- Confirm the OpenAI webhook subscribes to `live.transport.incoming` and both `OPENAI_WEBHOOK_SECRET` and `TWILIO_AUTH_TOKEN` are set; unsigned OpenAI and Twilio requests are refused.
 - Use synthetic demo callers only.
 - Call the handful of services used in the scripted demo that morning if partner staff want to describe their hours or access as live-confirmed.
 - Do not improvise a destination outside the curated directory.
