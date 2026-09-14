@@ -270,6 +270,8 @@ If the lookup is slow, unavailable, or the location is too vague, the tool retur
 
 The production assignment is `+1 206 309 8528` → `/twilio/voice/selfcare` and `+1 425 517 3281` → `/twilio/voice/jozi`. `HEALTH_LINE_ENABLED=false` retires the old `/twilio/voice/health` route without deleting its rollback code. Every path verifies Twilio's URL-bound signature and requires the signed destination number to match the configured line before storing a short-lived call profile. The signed OpenAI webhook then requires that exact profile instead of falling back to another assistant.
 
+The Self Care line greets first-time callers in English but is not language-restricted. It offers help in any language, switches to the caller's requested or detected language when the model understands it confidently, and preserves stored language preferences safely across calls. It uses medical reasoning for symptom assessment and, after obtaining a specific caller location, can use the bounded model-assisted provider lookup to suggest one suitable nearby care option first. Provider suggestions are demo-only and unverified, so the line tells callers to confirm before travel.
+
 In Jozi and combined modes:
 
 - GPT-Live leads the spoken conversation: it interprets natural language and carries stated symptoms and landmarks across turns. Delegated Responses reasoning chooses tools and support needs. Every organisation name, number, address, and hour still comes from the verified directory in `src/jozi-support.js`; model-generated destination facts are not allowed.

@@ -77,13 +77,23 @@ test('every fail-closed service-mode allowlist in the worker admits selfcare', (
   }
 });
 
-test('the selfcare greeting is Self Care in both demo languages', () => {
+test('the selfcare greeting offers unrestricted multilingual help', () => {
   const greeting = buildServiceGreeting('selfcare');
   assert.match(greeting, /Self Care/);
-  assert.match(greeting, /portugu/i);
+  assert.match(greeting, /any language/i);
+  assert.doesNotMatch(greeting, /English|Portugu/i);
   // and the untouched lines still greet exactly as before
   assert.match(buildServiceGreeting('health'), /health advisor/);
   assert.match(buildServiceGreeting('jozi'), /Jozi My Jozi/);
+});
+
+test('every Self Care Live prompt follows the caller without a two-language restriction', () => {
+  const source = readFileSync(fileURLToPath(new URL('../src/cloudflare-worker.js', import.meta.url)), 'utf8');
+  assert.match(source, /multilingual Self Care line/);
+  assert.match(source, /Follow the caller into any language you understand confidently/);
+  assert.match(source, /Never imply that only English and Portuguese are supported/);
+  assert.doesNotMatch(source, /Speak English or Portuguese following the caller/);
+  assert.doesNotMatch(source, /English — ou em português/);
 });
 
 test('selfcare record identity accepts close transcription only, never a different name', () => {
@@ -101,4 +111,20 @@ test('selfcare exposes one truthful simulated care-coordination tool', () => {
   assert.match(source, /clinician_handoff/);
   assert.match(source, /care_team_callback/);
   assert.match(source, /No live doctor was contacted or connected/);
+});
+
+test('selfcare uses medical judgment and can resolve nearby care after location', () => {
+  const source = readFileSync(fileURLToPath(new URL('../src/cloudflare-worker.js', import.meta.url)), 'utf8');
+  assert.match(source, /## MEDICAL JUDGMENT AND NEARBY CARE/);
+  assert.match(source, /Use broad medical knowledge to reason from the caller's symptoms/);
+  assert.match(source, /call resolve_providers once/);
+  assert.match(source, /single most suitable returned option first/);
+  assert.match(source, /use only voiceResponse and selected for factual details/i);
+  assert.match(source, /Never retry without a new caller detail/);
+  assert.match(source, /const providerTool = healthTools\.find\(\(tool\) => tool\.name === 'resolve_providers'\)/);
+  assert.match(source, /if \(normalized === 'selfcare'\) return \[assessmentTool, emergencyTool, providerTool, \.\.\.selfcareTools\]/);
+  assert.doesNotMatch(
+    source.match(/if \(normalized === 'selfcare'\) return \[[^\n]+/)?.[0] || '',
+    /find_clinics|book_slot|send_referral|request_commodities|request_test/
+  );
 });

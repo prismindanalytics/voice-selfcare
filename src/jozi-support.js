@@ -1573,7 +1573,7 @@ export function buildServiceGreeting(mode, demoEnabled = false) {
     return "Hello, thank you for calling. This is your health advisor. I'm here to help. What health concern can we talk through today?";
   }
   if (normalized === 'selfcare') {
-    return "Hello, you've reached the Self Care line. I can help in English — ou em português. How can I help you today?";
+    return "Hello, you've reached the Self Care line. I can help in any language you prefer. How can I help you today?";
   }
   const demoLabel = demoEnabled ? ' demo' : '';
   if (normalized === 'jozi') {
