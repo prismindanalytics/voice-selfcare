@@ -104,7 +104,10 @@ test('the netclinic line has its own tools, voice and prompt rules', () => {
   assert.match(prompt, /one zero one seven seven, or one one two from a cell phone/);
   assert.match(prompt, /Never say a booking was made/);
   assert.match(prompt, /You have no patient records, visits or documents on this line/);
-  assert.match(prompt, /Medirite as MED-ee-rite, Blaauwberg as BLOW-berg/);
+  assert.match(prompt, /Medirite is "medi" as in medical, then "rite" as in right/);
+  // a respelling is what the model copies into its words (seen on the first test call: "MED-ee-rite Sea Point")
+  assert.doesNotMatch(source, /MED-ee-rite|BLOW-berg|NET-clinic|NET-ee/);
+  assert.match(source, /never call them simulated or unverified/);
 });
 
 test('netclinic routes check Netclinic\'s account before anything else and keep the line on their callbacks', () => {

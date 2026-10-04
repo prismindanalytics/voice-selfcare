@@ -284,7 +284,7 @@ Call handle_emergency immediately, then tell them to call an ambulance on one ze
 
 ## VOICE CONSTRAINTS
 - One or two short sentences per turn, one question at a time, warm and plain.
-- Say Netclinic as NET-clinic, Netty as NET-ee, Medirite as MED-ee-rite, Blaauwberg as BLOW-berg. Read numbers in small groups, slowly.`;
+- Pronunciation (never write or say these descriptions, only the names): stress the first part of Netclinic; Medirite is "medi" as in medical, then "rite" as in right; in Blaauwberg the "aau" sounds like "ow" in now. Read numbers in small groups, slowly.`;
 
 const NETCLINIC_ACTION_RESPONSE_INSTRUCTIONS = [
   "Answer in one to three short spoken sentences, warm and calm, in the caller's language.",
@@ -1803,7 +1803,8 @@ export class CallSession extends DurableObject {
       'This call was on Netclinic\'s phone line in South Africa, answered by Netty. Nothing is booked, referred or ordered on this line.',
       'Write patientSummary in the language the caller mainly spoke.',
       'Write providerSummary in English for Netclinic\'s team: what the caller needed, what Netty told them, and anything the team must do (for example phone them back, or check an emergency). Use null only when nothing is needed.',
-      'Never describe an appointment, referral, pickup or test as made.'
+      'Never describe an appointment, referral, pickup or test as made.',
+      'The clinics, pharmacies, hours and prices Netty gave came from Netclinic\'s own lists: never call them simulated or unverified.'
     ] : [];
     const selfcareScribeLines = summaryServiceMode === 'selfcare' ? [
       'This call was on the Self Care line for South Africa and Mozambique.',
@@ -1838,7 +1839,7 @@ export class CallSession extends DurableObject {
               'testNeeded: true only when a diagnostic test is actually recommended or requested.',
               'Never generate post-call pickup or test IDs yourself. If the tool did not run during the call, state what information is still needed instead.',
               'Do not invent appointment numbers, referral IDs, pickup numbers, test request IDs, or provider locations in the summary. Use only the artifacts provided.',
-              'Make clear that generated logistics are simulated and unverified, not live pharmacy or clinic search results.',
+              ...(summaryServiceMode === 'netclinic' ? [] : ['Make clear that generated logistics are simulated and unverified, not live pharmacy or clinic search results.']),
               ...selfcareScribeLines,
               ...netclinicScribeLines
             ].join('\n')
@@ -3783,7 +3784,7 @@ function buildLiveFrontendInstructions(mode, lineContext = '') {
     : normalized === 'netclinic'
       ? [
           'Use a gentle, natural South African English cadence: do not sound the r in words like "Parklands" or "doctor", and use familiar local pronunciation. Never exaggerate or caricature an accent.',
-          'Say Netclinic as NET-clinic, Netty as NET-ee, Medirite as MED-ee-rite and Blaauwberg as BLOW-berg; Afrikaans "aa" sounds as in "father", and "ou" or "au" as in "now". Read phone numbers in small groups, slowly.',
+          'Pronunciation, for how you say names (always write and say the names themselves, never these descriptions): stress the first part of Netclinic; Medirite is "medi" as in medical, then "rite" as in right; in Blaauwberg the "aau" sounds like "ow" in now; Afrikaans "aa" sounds as in "father", and "ou" or "au" as in "now". Read phone numbers in small groups, slowly.',
           lineContext === 'doctor_missed'
             ? 'This caller is phoning back after their Netclinic doctor phoned them. The doctor could not take the call and will phone them again; never say when, and never discuss their visit.'
             : ''
