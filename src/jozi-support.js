@@ -1541,7 +1541,7 @@ PRIVACY
 
 export function normalizeServiceMode(value) {
   const mode = String(value || 'health').trim().toLowerCase();
-  return ['health', 'jozi', 'combined', 'selfcare'].includes(mode) ? mode : 'health';
+  return ['health', 'jozi', 'combined', 'selfcare', 'netclinic'].includes(mode) ? mode : 'health';
 }
 
 export function modeIncludesJozi(mode) {
@@ -1557,13 +1557,18 @@ export function modeIncludesHealth(mode) {
 export function serviceModePolicy(mode) {
   const normalized = normalizeServiceMode(mode);
   const includesJozi = modeIncludesJozi(normalized);
+  /* Netclinic keeps its record in its own system (the call goes to its Chatwoot inbox), so this
+     Worker holds no caller memory, sends no texts from its own numbers, and keeps the transcript
+     only for a limited time. */
+  const netclinic = normalized === 'netclinic';
   return {
     mode: normalized,
     includesHealth: modeIncludesHealth(normalized),
     includesJozi,
-    callerMemory: !includesJozi,
-    automaticFollowup: !includesJozi,
-    persistRawTranscript: !includesJozi
+    callerMemory: !includesJozi && !netclinic,
+    automaticFollowup: !includesJozi && !netclinic,
+    persistRawTranscript: !includesJozi,
+    ...(netclinic ? { transcriptTtlDays: 30 } : {})
   };
 }
 
@@ -1574,6 +1579,9 @@ export function buildServiceGreeting(mode, demoEnabled = false) {
   }
   if (normalized === 'selfcare') {
     return "Hello, you've reached the Self Care line. I can help in any language you prefer. How can I help you today?";
+  }
+  if (normalized === 'netclinic') {
+    return "Hello, you're through to Netclinic. This is Netty, and this call is transcribed. How can I help you today?";
   }
   const demoLabel = demoEnabled ? ' demo' : '';
   if (normalized === 'jozi') {

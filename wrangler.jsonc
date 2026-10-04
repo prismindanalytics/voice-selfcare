@@ -66,6 +66,12 @@
     "SELFCARE_PHONE_NUMBER": "+12063098528",
     "SELFCARE_BRIDGE_URL": "https://singularcare-selfcare.hao-aa5.workers.dev",
     "SELFCARE_REALTIME_VOICE": "marin",
+    // Netclinic's line (+27 60 011 2421, on Netclinic's own Twilio account). Secrets: NETCLINIC_API_TOKEN, and
+    // NETCLINIC_TWILIO_URL_KEY (or NETCLINIC_TWILIO_AUTH_TOKEN). Its tools and record are on NETCLINIC_API_URL.
+    "NETCLINIC_LINE_ENABLED": "true",
+    "NETCLINIC_PHONE_NUMBER": "+27600112421",
+    "NETCLINIC_REALTIME_VOICE": "quartz",
+    "NETCLINIC_API_URL": "https://test.singularcare.ai",
     "JOZI_DEMO_MODE": "true",
     "AUTOMATIC_FOLLOWUP_ENABLED": "true",
     "CALLER_MEMORY_ENABLED": "true",

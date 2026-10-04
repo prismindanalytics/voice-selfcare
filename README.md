@@ -290,6 +290,16 @@ In Jozi and combined modes:
 
 The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`](docs/jozi-demo-journeys.md).
 
+## Netclinic line
+
+Netclinic's number `+27 60 011 2421` → `/twilio/voice/netclinic` (owner, 4 October 2026). Netty answers in the `quartz` voice (Australian English, the closest of the fourteen GPT-Live voices to South African English; chosen by the owner from a recorded audition), with a South African cadence and a short pronunciation list in the prompt.
+
+- **What Netty does:** health questions from her own medical judgment, with warning-sign screening and the 10177 / 112 emergency route; anything about Netclinic through `netclinic_answer` (Netclinic's reviewed knowledge, the same answer as its web chat); the nearest Netclinic clinic or Medirite pharmacy through `find_nearest_netclinic`; and `ask_for_person`, which asks Netclinic's team to phone the caller back. Booking is not on this line yet: Netty tells callers to WhatsApp the same number or use virtual.netclinic.co.za.
+- **Where the call goes:** Netclinic's server (`NETCLINIC_API_URL`, bearer `NETCLINIC_API_TOKEN`) answers the tools under `/api/integrations/voice/…` and keeps the call in its Chatwoot Phone inbox. Finished turns are posted as the call runs (one after another, so they stay in order), flags for an emergency or a request for a person straight away, and the summary when the call ends. A failed post never stops the call.
+- **What stays here:** no caller memory, no texts from this Worker's numbers, and the transcript in KV for 30 days.
+- **Netclinic's Twilio account:** the number is not on this Worker's Twilio account, so its webhooks are checked against `NETCLINIC_TWILIO_AUTH_TOKEN` when set, or else a URL key (`?key=` matching `NETCLINIC_TWILIO_URL_KEY`, at least 32 characters). The status callbacks carry `line=netclinic` and the key. The voice URL is never checked against `TWILIO_AUTH_TOKEN`.
+- **A patient phoning back their doctor:** for now the number points straight here, and Netty tells such a caller to open their visit from Netclinic's text or WhatsApp link and keep their phone close. Prepared for the next step, where Netclinic's server answers the number first, rings the doctor, and sends the call here only when no doctor takes it, with `?context=doctor_missed`: Netty then greets with "your doctor couldn't take your call just now" and never discusses the visit.
+
 ## Environment Reference
 
 | Variable | Required | Default | Description |
@@ -321,6 +331,14 @@ The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`]
 | `JOZI_PHONE_NUMBER` | Jozi Twilio path | - | Expected E.164 destination number for the Jozi webhook |
 | `SELFCARE_LINE_ENABLED` | no | `false` | Enables the Self Care `/twilio/voice/selfcare` profile |
 | `SELFCARE_PHONE_NUMBER` | selfcare Twilio path | - | Expected E.164 destination number for Self Care |
+| `NETCLINIC_LINE_ENABLED` | no | `false` | Enables Netclinic's `/twilio/voice/netclinic` profile |
+| `NETCLINIC_PHONE_NUMBER` | netclinic path | - | Netclinic's E.164 number (`+27600112421`) |
+| `NETCLINIC_REALTIME_VOICE` | no | `quartz` | Netclinic output voice |
+| `NETCLINIC_API_URL` | netclinic path | - | Netclinic's server, for tools and the call record |
+| `NETCLINIC_API_TOKEN` | netclinic path | - | Secret: bearer token for Netclinic's `/api/integrations/voice/…` routes |
+| `NETCLINIC_TWILIO_URL_KEY` | netclinic path | - | Secret: URL key on Netclinic's Twilio webhooks (≥ 32 characters) when its auth token is not held here |
+| `NETCLINIC_TWILIO_AUTH_TOKEN` | no | - | Secret: Netclinic's Twilio auth token; when set, signatures are checked instead of the URL key |
+| `NETCLINIC_ANSWER_TIMEOUT_MS` | no | `9000` | Timeout for `netclinic_answer` |
 | `JOZI_DEMO_MODE` | no | `false` | Enables action-time demo booking, intake, assessment, clinician, and redirection screens |
 | `AUTOMATIC_FOLLOWUP_ENABLED` | no | `true` | Master switch for outbound SMS/WhatsApp; Jozi modes force it off |
 | `CALLER_MEMORY_ENABLED` | no | `true` | Enables hashed phone-level memory refresh after calls |

@@ -1,9 +1,11 @@
+const LINE_SERVICE_MODES = ['health', 'jozi', 'selfcare', 'netclinic'];
+
 export function normalizeLineServiceMode(value, fallback = 'health') {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'health' || normalized === 'jozi' || normalized === 'selfcare') return normalized;
+  if (LINE_SERVICE_MODES.includes(normalized)) return normalized;
 
   const fallbackMode = String(fallback || '').trim().toLowerCase();
-  if (fallbackMode === 'jozi' || fallbackMode === 'selfcare') return fallbackMode;
+  if (LINE_SERVICE_MODES.includes(fallbackMode)) return fallbackMode;
   return 'health';
 }
 
@@ -11,6 +13,7 @@ export function serviceModeForTwilioVoicePath(path, fallback = 'health') {
   const normalizedPath = String(path || '').toLowerCase().replace(/\/+$/, '') || '/';
   if (/^\/twilio\/voice\/jozi(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) return 'jozi';
   if (/^\/twilio\/voice\/selfcare(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) return 'selfcare';
+  if (/^\/twilio\/voice\/netclinic(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) return 'netclinic';
   if (/^\/twilio\/voice\/health(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) return 'health';
   if (/^\/twilio\/voice(?:\/(?:pcmu|pcma))?$/.test(normalizedPath)) {
     return normalizeLineServiceMode(fallback);
@@ -18,10 +21,15 @@ export function serviceModeForTwilioVoicePath(path, fallback = 'health') {
   return null;
 }
 
-export function twilioLineBindingMatches({ serviceMode, to, healthNumber, joziNumber, selfcareNumber }) {
+export function twilioLineBindingMatches({ serviceMode, to, healthNumber, joziNumber, selfcareNumber, netclinicNumber }) {
   const mode = String(serviceMode || '').trim().toLowerCase();
-  if (!['health', 'jozi', 'selfcare'].includes(mode)) return false;
+  if (!LINE_SERVICE_MODES.includes(mode)) return false;
   const destination = normalizePhone(to);
+  /* Netclinic's number lives on Netclinic's own Twilio account and is bound to nothing else. */
+  if (mode === 'netclinic') {
+    const netclinic = normalizePhone(netclinicNumber);
+    return Boolean(netclinic && destination && destination === netclinic);
+  }
   const health = normalizePhone(healthNumber);
   const jozi = normalizePhone(joziNumber);
   /* Selfcare may reuse either legacy number. Route-enable flags decide which named path is live,
@@ -52,8 +60,8 @@ export function extractTwilioCallSidFromSipHeaders(headers) {
   return values[0];
 }
 
-export async function verifyTwilioRequest(request, env = {}) {
-  const authToken = String(env.TWILIO_AUTH_TOKEN || '');
+export async function verifyTwilioRequest(request, env = {}, options = {}) {
+  const authToken = String(options.authToken ?? env.TWILIO_AUTH_TOKEN ?? '');
   const suppliedSignature = String(request?.headers?.get('x-twilio-signature') || '');
   const contentType = String(request?.headers?.get('content-type') || '').toLowerCase();
   if (!authToken || !suppliedSignature || !contentType.includes('application/x-www-form-urlencoded')) {
@@ -78,6 +86,23 @@ export async function verifyTwilioRequest(request, env = {}) {
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(signedPayload));
   const expected = bytesToBase64(new Uint8Array(signature));
   return constantTimeEqual(suppliedSignature, expected);
+}
+
+/* Netclinic's number is on a Twilio account whose auth token this Worker may not hold, so its
+   webhooks can carry a long secret in the URL instead (?key=). A configured auth token wins. */
+export async function verifyNetclinicTwilioRequest(request, env = {}) {
+  if (String(env.NETCLINIC_TWILIO_AUTH_TOKEN || '')) {
+    return verifyTwilioRequest(request, env, { authToken: env.NETCLINIC_TWILIO_AUTH_TOKEN });
+  }
+  const expected = String(env.NETCLINIC_TWILIO_URL_KEY || '');
+  if (expected.length < 32) return false;
+  let supplied = '';
+  try {
+    supplied = new URL(String(request?.url || '')).searchParams.get('key') || '';
+  } catch {
+    return false;
+  }
+  return constantTimeEqual(supplied, expected);
 }
 
 export function extractCallerPhoneFromSipHeaders(headers) {

@@ -20,6 +20,7 @@ import {
   normalizeLineServiceMode,
   serviceModeForTwilioVoicePath,
   twilioLineBindingMatches,
+  verifyNetclinicTwilioRequest,
   verifyTwilioRequest
 } from './line-routing.js';
 import {
@@ -56,7 +57,13 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 900;
 const DEFAULT_FINALIZE_IDLE_MS = 120000;
 const DEFAULT_LIVE_FINALIZE_DRAIN_MS = 1500;
 const DEFAULT_PROVIDER_LOOKUP_TIMEOUT_MS = 2500;
+// Netclinic's server: an answer runs its Netty pipeline (seconds); a place lookup is quick; events must not hold a call.
+const DEFAULT_NETCLINIC_ANSWER_TIMEOUT_MS = 9000;
+const DEFAULT_NETCLINIC_NEAREST_TIMEOUT_MS = 5000;
+const DEFAULT_NETCLINIC_EVENT_TIMEOUT_MS = 5000;
 const CALLER_MEMORY_PREFIX = 'caller_memory/';
+// Why Netclinic's server sent a call to Netty (its ?context=): a patient phoning back a doctor who could not answer.
+const LINE_CONTEXTS = ['doctor_missed'];
 
 const MEDICAL_INSTRUCTIONS = `You are an experienced medical professional providing telephone consultations for patients in Low and Middle Income Countries (LMICs). Conduct systematic assessments like a doctor would, while being warm and empathetic. Be proactive — do not wait for the patient to ask questions.
 
@@ -231,6 +238,71 @@ const SELFCARE_ACTION_RESPONSE_INSTRUCTIONS = [
   'Do not add a long recap.'
 ].join(' ');
 
+/* NETCLINIC'S PHONE LINE (+27 60 011 2421, owner 4 October 2026): Netty answers health questions with her own medical
+   judgment, Netclinic questions from Netclinic's own reviewed knowledge, finds the nearest Netclinic clinic or Medirite
+   pharmacy, and asks the team to phone a caller back. Netclinic's server (NETCLINIC_API_URL) answers the tools and keeps
+   every call in its Chatwoot Phone inbox; nothing is booked or read from a record on this line. */
+const NETCLINIC_INSTRUCTIONS = `You are Netty, the phone assistant for Netclinic in South Africa. Netclinic has walk-in clinics, online doctor consultations by video or phone, and partner Medirite pharmacies. Callers reach you on zero six zero, zero one one, two four two one.
+
+## INITIAL GREETING
+"Hello, you're through to Netclinic. This is Netty, and this call is transcribed. How can I help you today?"
+
+## LANGUAGE
+- Begin in English. If the caller speaks Afrikaans, isiZulu, isiXhosa, Sesotho or another language you understand confidently, switch to it and stay in it until they switch again.
+
+## HEALTH QUESTIONS
+- Use your own medical judgment from the whole conversation. Ask only the most useful missing detail, one question at a time.
+- Always screen for warning signs: chest pain, severe difficulty breathing, fainting or seizures, severe bleeding or a serious injury, signs of a stroke, a severe allergic reaction, confusion, thoughts of suicide, a very sick baby or child (not feeding, floppy, dehydrated), and pregnancy danger signs.
+- Give clear, practical self-care steps and say when to be seen and how soon. Never diagnose or prescribe: a Netclinic doctor can do that.
+- When a doctor is the right next step, say so and explain how to see one (below).
+
+## NETCLINIC FACTS
+- For anything about Netclinic itself (prices, opening hours, services, online consultations, sick notes, prescriptions, medical aid, payment, benefits such as Sisonke), call netclinic_answer with the caller's question in their own words.
+- netclinic_answer also gives Netclinic's reviewed clinical guidance when that would help a health answer.
+- Never state a price, opening time, address or phone number unless a tool returned it.
+
+## SEEING A DOCTOR
+- Netclinic's doctors see patients online. The easiest way is to send a WhatsApp message to this same number, zero six zero, zero one one, two four two one, saying "I want to see a doctor": Netty books them in on WhatsApp. They can also book at virtual dot netclinic dot co dot za.
+- You cannot book on this call. Never say a booking was made.
+
+## NEAREST CLINIC OR PHARMACY
+- Ask where they are (suburb, town, street or postcode) unless they said it, then call find_nearest_netclinic once with what they want: a Netclinic clinic or a Medirite pharmacy.
+- If it asks a question (for example which Parklands), ask it once and wait for the answer.
+
+## A DOCTOR PHONED THEM
+- If the caller says a Netclinic doctor tried to phone them, tell them to open their visit from the link Netclinic sent them by text or WhatsApp, where their doctor can see them, and to keep their phone close in case the doctor phones again. You can't connect them to the doctor on this line.
+
+## A PERSON ON THE TEAM
+- If the caller asks for a person, or needs something you can't do on this line (a refund, a complaint, changing or cancelling a booking, results, documents, a visit they already have), call ask_for_person with a short reason. Netclinic's team phones them back on the number they're calling from. Don't promise a time.
+
+## EMERGENCIES
+Call handle_emergency immediately, then tell them to call an ambulance on one zero one seven seven, or one one two from a cell phone.
+
+## WHAT YOU NEVER DO
+- You have no patient records, visits or documents on this line. Never read or guess them.
+- Never invent prices, hours, addresses, phone numbers, availability or bookings.
+
+## VOICE CONSTRAINTS
+- One or two short sentences per turn, one question at a time, warm and plain.
+- Say Netclinic as NET-clinic, Netty as NET-ee, Medirite as MED-ee-rite, Blaauwberg as BLOW-berg. Read numbers in small groups, slowly.`;
+
+const NETCLINIC_ACTION_RESPONSE_INSTRUCTIONS = [
+  "Answer in one to three short spoken sentences, warm and calm, in the caller's language.",
+  'For netclinic_answer, say its answer naturally and briefly. Never read links, markdown, lists or source names; say a web address the way people say it (virtual dot netclinic dot co dot za) and read numbers and prices slowly.',
+  'For find_nearest_netclinic, give the first place: its name, its street, how far it is, and today\'s hours when known. Offer the next one only if the caller asks. If it returned a question, ask it once and wait. If it found nothing, ask once for a nearby town or postcode.',
+  'For ask_for_person, say what its voiceResponse says and nothing more about timing.',
+  'If a tool failed, say so in one sentence and offer the next best step. Never invent the missing fact.',
+  'Do not add a long recap.'
+].join(' ');
+
+const NETCLINIC_DOCTOR_MISSED_GREETING = "Hello, this is Netty from Netclinic. Your doctor couldn't take your call just now, but they know you called back and will phone you again shortly. Is there anything I can help with while you wait?";
+
+function netclinicContextInstructions(lineContext) {
+  return lineContext === 'doctor_missed'
+    ? '## THIS CALL\nThe caller is phoning back after their Netclinic doctor phoned them. The doctor could not take this call and has been told the patient called back. If the caller asks, say the doctor will phone them again shortly. Never say when, and never discuss their visit.'
+    : '';
+}
+
 export class CallerRegistry extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -259,6 +331,9 @@ export class CallerRegistry extends DurableObject {
       }
       if (!profileColumns.has('destination_phone')) {
         this.ctx.storage.sql.exec('ALTER TABLE call_profile ADD COLUMN destination_phone TEXT');
+      }
+      if (!profileColumns.has('line_context')) {
+        this.ctx.storage.sql.exec('ALTER TABLE call_profile ADD COLUMN line_context TEXT');
       }
     });
   }
@@ -294,12 +369,14 @@ export class CallerRegistry extends DurableObject {
     const callerPhone = asE164(profile.callerPhone || '');
     const destinationPhone = asE164(profile.destinationPhone || '');
     this.ctx.storage.sql.exec('DELETE FROM call_profile WHERE created_at < ?', Date.now() - 6 * 60 * 60 * 1000);
+    const lineContext = LINE_CONTEXTS.includes(String(profile.lineContext || '')) ? String(profile.lineContext) : null;
     this.ctx.storage.sql.exec(
-      'INSERT OR REPLACE INTO call_profile (provider_call_id, service_mode, caller_phone, destination_phone, created_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO call_profile (provider_call_id, service_mode, caller_phone, destination_phone, line_context, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       String(providerCallId),
       serviceMode,
       isUsablePatientPhone(callerPhone) ? callerPhone : null,
       isUsablePatientPhone(destinationPhone) ? destinationPhone : null,
+      lineContext,
       Date.now()
     );
   }
@@ -307,7 +384,7 @@ export class CallerRegistry extends DurableObject {
   getCallProfile(providerCallId, maxAgeMs = 6 * 60 * 60 * 1000) {
     if (!providerCallId) return null;
     const row = this.ctx.storage.sql
-      .exec('SELECT service_mode, caller_phone, destination_phone, created_at FROM call_profile WHERE provider_call_id = ?', String(providerCallId))
+      .exec('SELECT service_mode, caller_phone, destination_phone, line_context, created_at FROM call_profile WHERE provider_call_id = ?', String(providerCallId))
       .toArray()[0];
     if (!row) return null;
     if (Date.now() - Number(row.created_at) > maxAgeMs) {
@@ -315,11 +392,12 @@ export class CallerRegistry extends DurableObject {
       return null;
     }
     const serviceMode = String(row.service_mode || '').trim().toLowerCase();
-    if (!['health', 'jozi', 'selfcare'].includes(serviceMode)) return null;
+    if (!['health', 'jozi', 'selfcare', 'netclinic'].includes(serviceMode)) return null;
     return {
       serviceMode,
       callerPhone: asE164(row.caller_phone || '') || null,
-      destinationPhone: asE164(row.destination_phone || '') || null
+      destinationPhone: asE164(row.destination_phone || '') || null,
+      lineContext: LINE_CONTEXTS.includes(String(row.line_context || '')) ? String(row.line_context) : null
     };
   }
 
@@ -395,6 +473,7 @@ export class CallSession extends DurableObject {
     this.setMeta('voice_api', voiceApi);
     this.setMeta('patient_phone', safePhone);
     this.setMeta('service_mode', serviceMode);
+    if (LINE_CONTEXTS.includes(String(options.lineContext || ''))) this.setMeta('line_context', String(options.lineContext));
     try {
       if (!providerCallId) throw new Error('A verified provider call id is required.');
       this.setMeta('provider_call_id', providerCallId);
@@ -539,14 +618,15 @@ export class CallSession extends DurableObject {
     const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
     const demoEnabled = joziDemoEnabled(this.env);
 
+    const lineContext = this.getMeta('line_context') || '';
     const serviceInstructions = simpleInstructions
       ? buildMinimalInstructions(serviceMode)
-      : buildServiceInstructions(serviceMode, memoryContext);
+      : buildServiceInstructions(serviceMode, memoryContext, lineContext);
     const payload = voiceApi === 'live'
       ? buildLiveAcceptPayload({
           model,
           voice: realtimeVoiceForMode(this.env, serviceMode),
-          frontendInstructions: buildLiveFrontendInstructions(serviceMode),
+          frontendInstructions: buildLiveFrontendInstructions(serviceMode, lineContext),
           backendModel: this.env.OPENAI_LIVE_BACKEND_MODEL || DEFAULT_LIVE_BACKEND_MODEL,
           backendInstructions: buildLiveBackendInstructions(serviceMode, serviceInstructions),
           tools: useTools ? realtimeTools(serviceMode, demoEnabled) : [],
@@ -911,6 +991,7 @@ export class CallSession extends DurableObject {
         this.setMeta('last_response_id', nested.response?.id || nested.response_id || '');
       } else if (nested.type === 'response.completed' || nested.type === 'response.failed') {
         this.setMeta('last_response_status', nested.type.replace('response.', ''));
+        this.forwardNetclinicTurns({ trailing: 'netty' });
       }
       return;
     }
@@ -1353,6 +1434,59 @@ export class CallSession extends DurableObject {
           }
           break;
 
+        case 'netclinic_answer':
+          {
+            const question = String(args.question || '').trim().slice(0, 600);
+            if (!question) {
+              result = { success: false, error: 'No question was given.' };
+              break;
+            }
+            const answered = await netclinicApiRequest(this.env, '/api/integrations/voice/answer', {
+              method: 'POST',
+              timeoutMs: numericEnv(this.env.NETCLINIC_ANSWER_TIMEOUT_MS, DEFAULT_NETCLINIC_ANSWER_TIMEOUT_MS),
+              body: { call: this.netclinicCallInfo(), question, conversation: this.liveConversationTurns(8) }
+            });
+            const answer = answered.ok ? String(answered.data?.answer || '').trim() : '';
+            result = answer
+              ? { success: true, answer: answer.slice(0, 2000) }
+              : { success: false, error: answered.error || 'no answer', voiceResponse: "I couldn't check that with Netclinic just now." };
+            break;
+          }
+
+        case 'find_nearest_netclinic':
+          {
+            const place = String(args.place || '').trim().slice(0, 200);
+            const what = args.what === 'pharmacy' ? 'pharmacy' : 'clinic';
+            const found = await netclinicApiRequest(this.env, '/api/integrations/voice/nearest', {
+              method: 'POST',
+              timeoutMs: numericEnv(this.env.NETCLINIC_NEAREST_TIMEOUT_MS, DEFAULT_NETCLINIC_NEAREST_TIMEOUT_MS),
+              body: { call: this.netclinicCallInfo(), place, what }
+            });
+            result = found.ok && found.data && typeof found.data === 'object'
+              ? { success: true, ...found.data }
+              : { success: false, error: found.error || 'lookup unavailable', voiceResponse: "I couldn't look that up just now." };
+            break;
+          }
+
+        case 'ask_for_person':
+          {
+            const reason = String(args.reason || '').trim().slice(0, 300);
+            this.setMeta('netclinic_needs_person', reason || 'asked for a person');
+            const posted = await this.netclinicPost('/api/integrations/voice/events', {
+              flag: { kind: 'needs_person', reason: reason || 'asked for a person' }
+            });
+            const callerKnown = !String(phone).startsWith('anonymous');
+            result = posted?.ok && callerKnown
+              ? { success: true, voiceResponse: "I've asked Netclinic's team to phone you back on the number you're calling from." }
+              : {
+                  success: false,
+                  voiceResponse: callerKnown
+                    ? "I couldn't reach the team just now. Please send a WhatsApp message to this number and someone will help you."
+                    : "I can't see the number you're calling from, so the team can't phone you back. Please send a WhatsApp message to this number and someone will help you."
+                };
+            break;
+          }
+
         case 'handle_emergency':
           if (modeIncludesJozi(serviceMode)) {
             this.setMeta('jozi_demo_consent_offer', '{}');
@@ -1371,9 +1505,17 @@ export class CallSession extends DurableObject {
                 emergency: true,
                 voiceResponse: serviceMode === 'selfcare'
                   ? 'This sounds serious and needs urgent medical attention now. In South Africa call one zero one seven seven, or one one two from a mobile; in Mozambique call one one two or go straight to the nearest banco de socorros.'
-                  : 'This sounds serious and needs urgent medical attention. Please call emergency services or go to the nearest emergency facility now.'
+                  : serviceMode === 'netclinic'
+                    ? 'This sounds serious and needs urgent medical attention now. Please call an ambulance on one zero one seven seven, or one one two from a cell phone, or go to your nearest emergency unit. Don\'t wait for an online visit.'
+                    : 'This sounds serious and needs urgent medical attention. Please call emergency services or go to the nearest emergency facility now.'
               };
           this.addMessage('system', `Emergency protocol: ${JSON.stringify(args)}`);
+          if (serviceMode === 'netclinic') {
+            this.setMeta('netclinic_emergency', '1');
+            this.netclinicPost('/api/integrations/voice/events', {
+              flag: { kind: 'emergency', reason: (args.symptoms || []).slice(0, 3).join(', ').slice(0, 200) || 'emergency guidance given' }
+            });
+          }
           if (serviceMode === 'selfcare') {
             this.pushSelfcareTimelineEvent({
               type: 'escalation',
@@ -1428,7 +1570,8 @@ export class CallSession extends DurableObject {
           max_output_tokens: numericEnv(this.env.OPENAI_MAX_OUTPUT_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS),
           instructions: modeIncludesJozi(serviceMode)
             ? JOZI_ACTION_RESPONSE_INSTRUCTIONS
-            : serviceMode === 'selfcare' ? SELFCARE_ACTION_RESPONSE_INSTRUCTIONS : ACTION_RESPONSE_INSTRUCTIONS
+            : serviceMode === 'selfcare' ? SELFCARE_ACTION_RESPONSE_INSTRUCTIONS
+              : serviceMode === 'netclinic' ? NETCLINIC_ACTION_RESPONSE_INSTRUCTIONS : ACTION_RESPONSE_INSTRUCTIONS
         }
       });
     }
@@ -1454,6 +1597,7 @@ export class CallSession extends DurableObject {
 
     const providerCallId = this.getMeta('provider_call_id');
     try {
+      this.forwardNetclinicTurns({ trailing: 'all' });
       this.flushPendingInputTranscripts();
       this.flushPendingLiveTranscripts();
 
@@ -1500,6 +1644,28 @@ export class CallSession extends DurableObject {
             ? `Voice call handed to care team (${urgency})`
             : `Voice call completed${summaries.languageUsed ? ' — ' + summaries.languageUsed : ''} · summary scribed`,
           detail: (summaries.providerSummary || summaries.patientSummary || '').slice(0, 290)
+        });
+      }
+
+      if (serviceMode === 'netclinic' && !this.getMeta('netclinic_end_posted')) {
+        this.setMeta('netclinic_end_posted', '1');
+        await this.netclinicPost('/api/integrations/voice/events', {
+          end: {
+            at: this.getMeta('completed_at'),
+            reason: this.getMeta('finalize_reason') || this.getMeta('live_close_reason') || '',
+            summary: summaries.patientSummary || '',
+            provider_summary: summaries.providerSummary || '',
+            followup_needed: Boolean(summaries.providerFollowupNeeded),
+            followup_reason: summaries.providerFollowupReason || 'none',
+            case_type: summaries.caseType || 'unknown',
+            language: summaries.languageUsed || '',
+            needs_person: this.getMeta('netclinic_needs_person') || '',
+            emergency: this.getMeta('netclinic_emergency') === '1'
+          },
+          transcript: transcriptMessages
+            .filter((message) => message.role === 'patient' || message.role === 'assistant')
+            .map((message) => ({ role: message.role === 'assistant' ? 'netty' : 'caller', text: String(message.text || '').slice(0, 4000) }))
+            .slice(-200)
         });
       }
 
@@ -1619,6 +1785,8 @@ export class CallSession extends DurableObject {
     };
     if (!policy.persistRawTranscript) {
       putOptions.expirationTtl = Math.max(60, Math.round(numericEnv(this.env.JOZI_TRANSCRIPT_TTL_DAYS, 7) * 24 * 60 * 60));
+    } else if (policy.transcriptTtlDays) {
+      putOptions.expirationTtl = Math.max(60, Math.round(policy.transcriptTtlDays * 24 * 60 * 60));
     }
     await this.env.TRANSCRIPTS.put(key, JSON.stringify(payload, null, 2), putOptions);
     this.setMeta('transcript_kv_key', key);
@@ -1631,6 +1799,12 @@ export class CallSession extends DurableObject {
     }
     const apiKey = this.env.OPENAI_API_KEY;
     if (!apiKey) return fallbackSummaries(messages, artifacts);
+    const netclinicScribeLines = summaryServiceMode === 'netclinic' ? [
+      'This call was on Netclinic\'s phone line in South Africa, answered by Netty. Nothing is booked, referred or ordered on this line.',
+      'Write patientSummary in the language the caller mainly spoke.',
+      'Write providerSummary in English for Netclinic\'s team: what the caller needed, what Netty told them, and anything the team must do (for example phone them back, or check an emergency). Use null only when nothing is needed.',
+      'Never describe an appointment, referral, pickup or test as made.'
+    ] : [];
     const selfcareScribeLines = summaryServiceMode === 'selfcare' ? [
       'This call was on the Self Care line for South Africa and Mozambique.',
       'Write patientSummary in the language the caller mainly spoke — a Portuguese caller gets Portuguese.',
@@ -1665,7 +1839,8 @@ export class CallSession extends DurableObject {
               'Never generate post-call pickup or test IDs yourself. If the tool did not run during the call, state what information is still needed instead.',
               'Do not invent appointment numbers, referral IDs, pickup numbers, test request IDs, or provider locations in the summary. Use only the artifacts provided.',
               'Make clear that generated logistics are simulated and unverified, not live pharmacy or clinic search results.',
-              ...selfcareScribeLines
+              ...selfcareScribeLines,
+              ...netclinicScribeLines
             ].join('\n')
           },
           {
@@ -1702,6 +1877,80 @@ export class CallSession extends DurableObject {
     }
 
     return false;
+  }
+
+  /* NETCLINIC: the call as Netclinic's server knows it. The number is the caller ID, which proves nothing. */
+  netclinicCallInfo() {
+    return {
+      id: this.getMeta('call_id') || '',
+      provider_call_id: this.getMeta('provider_call_id') || '',
+      from: this.getMeta('patient_phone') || '',
+      started_at: this.getMeta('accepted_at') || '',
+      context: this.getMeta('line_context') || ''
+    };
+  }
+
+  /* Posts to Netclinic's server go one after another, so Chatwoot shows the turns in the order they were said.
+     A lost post costs a line in Chatwoot, never the call. */
+  netclinicPost(path, body) {
+    if ((this.getMeta('service_mode') || '') !== 'netclinic') return Promise.resolve(null);
+    const send = () => netclinicApiRequest(this.env, path, {
+      method: 'POST',
+      timeoutMs: numericEnv(this.env.NETCLINIC_EVENT_TIMEOUT_MS, DEFAULT_NETCLINIC_EVENT_TIMEOUT_MS),
+      body: { call: this.netclinicCallInfo(), ...body }
+    });
+    this.netclinicChain = (this.netclinicChain || Promise.resolve()).then(send, send);
+    return this.netclinicChain;
+  }
+
+  /* The live transcript as turns: consecutive deltas of one speaker are one turn. */
+  liveTranscriptGroups(afterSeq = 0) {
+    const rows = this.ctx.storage.sql
+      .exec('SELECT seq, role, delta FROM live_transcript_deltas WHERE seq > ? ORDER BY seq ASC', Number(afterSeq) || 0)
+      .toArray();
+    const groups = [];
+    for (const row of rows) {
+      const role = row.role === 'assistant' ? 'netty' : 'caller';
+      const last = groups.at(-1);
+      if (last?.role === role) {
+        last.text += String(row.delta || '');
+        last.seq = Number(row.seq);
+      } else {
+        groups.push({ role, text: String(row.delta || ''), seq: Number(row.seq) });
+      }
+    }
+    return groups;
+  }
+
+  // The last turns of this call, for Netclinic's answer tool (its own words are the latest caller turn).
+  liveConversationTurns(limit = 8) {
+    return this.liveTranscriptGroups(0)
+      .map((group) => ({ role: group.role === 'netty' ? 'assistant' : 'user', content: group.text.trim().slice(0, 1400) }))
+      .filter((turn) => turn.content)
+      .slice(-limit);
+  }
+
+  /* Finished turns go to Netclinic's server as the call runs: a speaker's turn is finished when the other one starts,
+     Netty's also when her response completes (trailing 'netty'), and everything at the end (trailing 'all'). */
+  forwardNetclinicTurns({ trailing = 'none' } = {}) {
+    if ((this.getMeta('service_mode') || '') !== 'netclinic') return null;
+    const groups = this.liveTranscriptGroups(this.getMeta('netclinic_forwarded_seq') || 0);
+    const last = groups.at(-1);
+    const ready = trailing === 'all' || (trailing === 'netty' && last?.role === 'netty') ? groups : groups.slice(0, -1);
+    if (!ready.length) return null;
+    this.setMeta('netclinic_forwarded_seq', String(ready.at(-1).seq));
+    const turns = ready
+      .map((group) => ({ seq: group.seq, role: group.role, text: group.text.trim().slice(0, 4000) }))
+      .filter((turn) => turn.text);
+    return turns.length ? this.netclinicPost('/api/integrations/voice/events', { turns }) : null;
+  }
+
+  greetingText() {
+    const serviceMode = this.getMeta('service_mode') || configuredServiceMode(this.env);
+    if (normalizeServiceMode(serviceMode) === 'netclinic' && this.getMeta('line_context') === 'doctor_missed') {
+      return NETCLINIC_DOCTOR_MISSED_GREETING;
+    }
+    return buildServiceGreeting(serviceMode, joziDemoEnabled(this.env));
   }
 
   /* Fire-and-forget: a lost event costs one line on the demo record; blocking the voice turn or
@@ -1771,6 +2020,8 @@ export class CallSession extends DurableObject {
     } else {
       this.markPendingLiveOffersSpoken(startMs, endMs);
     }
+    if (this.lastLiveDeltaRole && this.lastLiveDeltaRole !== safeRole) this.forwardNetclinicTurns();
+    this.lastLiveDeltaRole = safeRole;
   }
 
   liveInputCheckpoint() {
@@ -1929,10 +2180,7 @@ export class CallSession extends DurableObject {
       if (!this.getMeta('greeting_commentary_event_id')) this.sendLiveGreetingStart();
       return;
     }
-    const greeting = buildServiceGreeting(
-      this.getMeta('service_mode') || configuredServiceMode(this.env),
-      joziDemoEnabled(this.env)
-    );
+    const greeting = this.greetingText();
     const greetingEventId = voiceApi === 'live' ? generateId('GREETING') : '';
     const sent = voiceApi === 'live'
       ? this.sendRealtime(liveGreetingEvent(greeting, greetingEventId))
@@ -1963,10 +2211,7 @@ export class CallSession extends DurableObject {
   sendLiveGreetingStart() {
     if (this.getMeta('greeting_commentary_event_id')) return;
     const eventId = generateId('GREETING_START');
-    const greeting = buildServiceGreeting(
-      this.getMeta('service_mode') || configuredServiceMode(this.env),
-      joziDemoEnabled(this.env)
-    );
+    const greeting = this.greetingText();
     if (!this.sendRealtime(liveGreetingStartEvent(greeting, eventId))) return;
     this.setMeta('greeting_commentary_event_id', eventId);
     this.setMeta('greeting_commentary_sent_at', new Date().toISOString());
@@ -2039,7 +2284,8 @@ async function routeRequest(request, env, ctx) {
         ...(lineModeEnabled(env, defaultMode) ? { twilioDefault: defaultMode } : {}),
         ...(healthLineEnabled(env) ? { twilioHealth: 'health' } : {}),
         ...(joziLineEnabled(env) ? { twilioJozi: 'jozi' } : {}),
-        ...(selfcareLineEnabled(env) ? { twilioSelfcare: 'selfcare' } : {})
+        ...(selfcareLineEnabled(env) ? { twilioSelfcare: 'selfcare' } : {}),
+        ...(netclinicLineEnabled(env) ? { twilioNetclinic: 'netclinic' } : {})
       },
       timestamp: new Date().toISOString()
     });
@@ -2070,16 +2316,31 @@ async function routeRequest(request, env, ctx) {
 
   if (request.method === 'POST' && path === '/signalwire/status') return textResponse('OK');
 
+  /* Netclinic's number is on Netclinic's own Twilio account: its webhooks are checked against that account
+     (verifyNetclinicTwilioRequest), never against this Worker's TWILIO_AUTH_TOKEN, and only on its own path. */
+  if (request.method === 'POST' && serviceModeForTwilioVoicePath(path) === 'netclinic') {
+    if (!await verifyNetclinicTwilioRequest(request, env)) return textResponse('Invalid Twilio signature.', 403);
+    if (!activeLineConfigurationIsValid(env)) return textResponse('Voice line configuration is invalid.', 503);
+    if (!netclinicLineEnabled(env)) return textResponse('Netclinic line is not enabled.', 404);
+    return handleTwilioVoice(request, env, { serviceMode: 'netclinic' });
+  }
+
   if (request.method === 'POST' && path.startsWith('/twilio/voice')) {
     if (!env.TWILIO_AUTH_TOKEN) return textResponse('Twilio verification is not configured.', 503);
     if (!await verifyTwilioRequest(request, env)) return textResponse('Invalid Twilio signature.', 403);
     if (!activeLineConfigurationIsValid(env)) return textResponse('Voice line configuration is invalid.', 503);
     const serviceMode = serviceModeForTwilioVoicePath(path, configuredServiceMode(env));
-    if (!serviceMode) return textResponse('Not Found', 404);
+    if (!serviceMode || serviceMode === 'netclinic') return textResponse('Not Found', 404);
     if (serviceMode === 'health' && !healthLineEnabled(env)) return textResponse('Health line is not enabled.', 404);
     if (serviceMode === 'jozi' && !joziLineEnabled(env)) return textResponse('Jozi line is not enabled.', 404);
     if (serviceMode === 'selfcare' && !selfcareLineEnabled(env)) return textResponse('Selfcare line is not enabled.', 404);
     return handleTwilioVoice(request, env, { serviceMode });
+  }
+
+  if (request.method === 'POST' && (path === '/twilio/status' || path === '/twilio/dial-status') &&
+      new URL(request.url).searchParams.get('line') === 'netclinic') {
+    if (!await verifyNetclinicTwilioRequest(request, env)) return textResponse('Invalid Twilio signature.', 403);
+    return path === '/twilio/status' ? handleTwilioStatus(request, env, ctx) : handleTwilioDialStatus(request, env, ctx);
   }
 
   if (request.method === 'POST' && path === '/twilio/status') {
@@ -2158,14 +2419,16 @@ async function handleOpenAIWebhook(request, env, ctx, minimal) {
       to: profile.destinationPhone,
       healthNumber: env.HEALTH_PHONE_NUMBER,
       joziNumber: env.JOZI_PHONE_NUMBER,
-      selfcareNumber: env.SELFCARE_PHONE_NUMBER
+      selfcareNumber: env.SELFCARE_PHONE_NUMBER,
+      netclinicNumber: env.NETCLINIC_PHONE_NUMBER
     }) : false;
     if (!profile ||
         !activeLineConfigurationIsValid(env) ||
         !profileDestinationMatches ||
         (profile.serviceMode === 'health' && !healthLineEnabled(env)) ||
         (profile.serviceMode === 'jozi' && !joziLineEnabled(env)) ||
-        (profile.serviceMode === 'selfcare' && !selfcareLineEnabled(env))) {
+        (profile.serviceMode === 'selfcare' && !selfcareLineEnabled(env)) ||
+        (profile.serviceMode === 'netclinic' && !netclinicLineEnabled(env))) {
       console.error('[Routing] Rejecting call without one trusted, enabled line profile', JSON.stringify({ callId }));
       ctx.waitUntil(rejectOpenAICall(env, callId, 603, incomingVoiceApi).catch((error) => {
         console.error('[Routing] Could not reject unprofiled call', error);
@@ -2175,6 +2438,7 @@ async function handleOpenAIWebhook(request, env, ctx, minimal) {
     ctx.waitUntil(callSession(env, callId).acceptAndMonitor(event, profile.callerPhone, {
       minimal,
       serviceMode: profile.serviceMode,
+      lineContext: profile.lineContext,
       providerCallId,
       voiceApi: incomingVoiceApi
     }));
@@ -2227,15 +2491,21 @@ async function handleTwilioVoice(request, env, options = {}) {
     to: form.To,
     healthNumber: env.HEALTH_PHONE_NUMBER,
     joziNumber: env.JOZI_PHONE_NUMBER,
-    selfcareNumber: env.SELFCARE_PHONE_NUMBER
+    selfcareNumber: env.SELFCARE_PHONE_NUMBER,
+    netclinicNumber: env.NETCLINIC_PHONE_NUMBER
   })) {
     return xmlResponse('<Response><Say>This phone number is not configured for this line.</Say><Hangup/></Response>', 403);
   }
   const callerPhone = asE164(form.From || '');
+  const requestUrl = new URL(request.url);
+  const lineContext = serviceMode === 'netclinic' && LINE_CONTEXTS.includes(requestUrl.searchParams.get('context') || '')
+    ? requestUrl.searchParams.get('context')
+    : null;
   await callerRegistry(env).setCallProfile(callSid, {
     serviceMode,
-    callerPhone: ['health', 'selfcare'].includes(serviceMode) && isUsablePatientPhone(callerPhone) ? callerPhone : null,
-    destinationPhone: form.To
+    callerPhone: ['health', 'selfcare', 'netclinic'].includes(serviceMode) && isUsablePatientPhone(callerPhone) ? callerPhone : null,
+    destinationPhone: form.To,
+    lineContext
   });
 
   const projectId = requireEnv(env, 'OPENAI_PROJECT_ID');
@@ -2246,6 +2516,18 @@ async function handleTwilioVoice(request, env, options = {}) {
   const sipUri = buildOpenAISipUri(projectId, sipHeaders, {
     secureMedia: configuredOpenAIVoiceApi(env) === 'live'
   });
+  if (serviceMode === 'netclinic') {
+    /* Netclinic's callbacks carry the line and, without that account's auth token here, the URL key. No spoken
+       "connecting" line: the caller hears ringing until Netty answers. */
+    const key = env.NETCLINIC_TWILIO_AUTH_TOKEN ? '' : `&key=${encodeURIComponent(env.NETCLINIC_TWILIO_URL_KEY || '')}`;
+    const netclinicStatusUrl = `${origin}/twilio/status?line=netclinic${key}`;
+    const netclinicDialStatusUrl = `${origin}/twilio/dial-status?line=netclinic${key}`;
+    return xmlResponse(`<Response>
+  <Dial answerOnBridge="true" action="${escapeXml(netclinicDialStatusUrl)}" method="POST">
+    <Sip statusCallback="${escapeXml(netclinicStatusUrl)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed">${escapeXml(sipUri)}</Sip>
+  </Dial>
+</Response>`);
+  }
   const statusUrl = `${origin}/twilio/status`;
   const dialStatusUrl = `${origin}/twilio/dial-status`;
   const lineLabel = modeIncludesJozi(serviceMode)
@@ -3468,10 +3750,13 @@ function buildSelfcareInstructions(memoryContext) {
   return memoryInstructions ? `${SELFCARE_INSTRUCTIONS}\n\n${memoryInstructions}` : SELFCARE_INSTRUCTIONS;
 }
 
-function buildServiceInstructions(mode, memoryContext) {
+function buildServiceInstructions(mode, memoryContext, lineContext = '') {
   const normalized = normalizeServiceMode(mode);
   if (normalized === 'health') return buildMedicalInstructions(memoryContext);
   if (normalized === 'selfcare') return buildSelfcareInstructions(memoryContext);
+  if (normalized === 'netclinic') {
+    return [NETCLINIC_INSTRUCTIONS, netclinicContextInstructions(lineContext)].filter(Boolean).join('\n\n');
+  }
   if (normalized === 'jozi') return JOZI_SUPPORT_INSTRUCTIONS;
   return [
     JOZI_SUPPORT_INSTRUCTIONS,
@@ -3479,20 +3764,40 @@ function buildServiceInstructions(mode, memoryContext) {
   ].join('\n\n');
 }
 
-function buildLiveFrontendInstructions(mode) {
+function buildLiveFrontendInstructions(mode, lineContext = '') {
   const normalized = normalizeServiceMode(mode);
-  const identity = normalized === 'selfcare'
+  const identity = normalized === 'netclinic'
+    ? 'You are Netty, Netclinic\'s phone assistant for callers in South Africa.'
+    : normalized === 'selfcare'
     ? 'You are the Self Care companion for callers in South Africa and Mozambique.'
     : modeIncludesJozi(normalized)
       ? 'You are the Jozi My Jozi support companion for people in Johannesburg, including callers without stable housing, money, transport, privacy, a kitchen, or a safe place to wash.'
       : 'You are a warm telephone health adviser for callers in low-resource settings.';
-  const language = normalized === 'selfcare'
+  const language = normalized === 'netclinic'
+    ? 'Begin in English. Switch to Afrikaans, isiZulu, isiXhosa, Sesotho or another language as soon as you understand the caller confidently in it, and stay in it.'
+    : normalized === 'selfcare'
     ? 'Begin in English and make clear that any language is welcome. Switch fully to the caller\'s language as soon as you understand it confidently, whether they speak it or request it by name. Never imply that only English and Portuguese are supported.'
     : 'Begin in English. Follow the caller into another language when you understand it confidently.';
   const localDelivery = modeIncludesJozi(normalized)
     ? 'Use a gentle, natural South African English cadence and familiar local pronunciation. Never exaggerate or caricature an accent, and pronounce Johannesburg place names carefully.'
-    : '';
-  const capabilities = normalized === 'selfcare'
+    : normalized === 'netclinic'
+      ? [
+          'Use a gentle, natural South African English cadence: do not sound the r in words like "Parklands" or "doctor", and use familiar local pronunciation. Never exaggerate or caricature an accent.',
+          'Say Netclinic as NET-clinic, Netty as NET-ee, Medirite as MED-ee-rite and Blaauwberg as BLOW-berg; Afrikaans "aa" sounds as in "father", and "ou" or "au" as in "now". Read phone numbers in small groups, slowly.',
+          lineContext === 'doctor_missed'
+            ? 'This caller is phoning back after their Netclinic doctor phoned them. The doctor could not take the call and will phone them again; never say when, and never discuss their visit.'
+            : ''
+        ].filter(Boolean).join(' ')
+      : '';
+  const capabilities = normalized === 'netclinic'
+    ? [
+        '- Health guidance: your own medical judgment for symptoms, warning signs, self-care, and when and where to be seen.',
+        '- Netclinic answers: prices, opening hours, services and how to see a doctor, from Netclinic\'s own reviewed knowledge.',
+        '- Nearest Netclinic clinic or Medirite pharmacy, from a suburb, town, street or postcode.',
+        '- A call back from Netclinic\'s team when the caller wants a person.',
+        '- Emergency routing: an ambulance on 10177, or 112 from a cell phone.'
+      ]
+    : normalized === 'selfcare'
     ? [
         '- Clinical reasoning: everyday symptoms, chronic care, maternal and mental wellbeing, red flags, and safe next steps.',
         '- Nearby care: after obtaining a specific location, use the provider tool to suggest an appropriate named clinic, pharmacy, hospital, lab, or health centre and clearly mark it as unverified.',
@@ -3550,10 +3855,16 @@ function buildLiveBackendInstructions(mode, serviceInstructions) {
         .replace(/## INITIAL GREETING[\s\S]*?(?=\n## LANGUAGE RULES)/, '')
         .replace(/## VOICE CONSTRAINTS[\s\S]*?(?=\n\n## PRIOR PHONE CONTEXT|$)/, '')
         .trim()
-    : serviceInstructions;
+    : normalized === 'netclinic'
+      ? serviceInstructions
+          .replace(/## INITIAL GREETING[\s\S]*?(?=\n## LANGUAGE)/, '')
+          .replace(/## VOICE CONSTRAINTS[\s\S]*?(?=\n\n## THIS CALL|$)/, '')
+          .trim()
+      : serviceInstructions;
   const resultInstructions = modeIncludesJozi(normalized)
     ? JOZI_ACTION_RESPONSE_INSTRUCTIONS
-    : normalized === 'selfcare' ? SELFCARE_ACTION_RESPONSE_INSTRUCTIONS : ACTION_RESPONSE_INSTRUCTIONS;
+    : normalized === 'selfcare' ? SELFCARE_ACTION_RESPONSE_INSTRUCTIONS
+      : normalized === 'netclinic' ? NETCLINIC_ACTION_RESPONSE_INSTRUCTIONS : ACTION_RESPONSE_INSTRUCTIONS;
   return [
     '## GPT-LIVE BACKEND ROLE',
     'You are the reasoning and tool backend for a live phone conversation. The voice frontend handles pacing, empathy, and interruptions; you decide the safe next step and select tools.',
@@ -3568,6 +3879,9 @@ function buildLiveBackendInstructions(mode, serviceInstructions) {
 }
 
 function buildMinimalInstructions(mode) {
+  if (normalizeServiceMode(mode) === 'netclinic') {
+    return 'You are Netty, Netclinic\'s phone assistant in South Africa. Use your medical judgment for health questions and screen for warning signs, use netclinic_answer for anything about Netclinic, find_nearest_netclinic for the nearest clinic or Medirite pharmacy, ask_for_person when the caller wants a person, ask one short question at a time, and escalate emergencies first.';
+  }
   if (normalizeServiceMode(mode) === 'selfcare') {
     return 'You are the multilingual Self Care line. Follow the caller into any language you understand confidently, use your medical judgment for symptom reasoning, use find_clinics with your own geographic knowledge when nearby care is needed, ask one short question at a time, use record tools only with the caller\'s confirmed identity, and escalate emergencies first.';
   }
@@ -3890,12 +4204,53 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
     }
   ];
 
+  const netclinicTools = [
+    {
+      type: 'function',
+      name: 'netclinic_answer',
+      description: 'Netclinic\'s own reviewed answer, the same one its web chat gives: prices and fees, opening hours, services, online consultations, sick notes, prescriptions, medical aid, payment, benefits such as Sisonke, and Netclinic\'s clinical library. Returns text to say in your own spoken words.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'The caller\'s question in their own words, completed from the conversation if it was short (e.g. "how much is it" → "How much does an online consultation cost?").' }
+        },
+        required: ['question']
+      }
+    },
+    {
+      type: 'function',
+      name: 'find_nearest_netclinic',
+      description: 'Find the nearest Netclinic clinic or Medirite pharmacy to a place in South Africa the caller gives: a suburb, town, street address or postcode. Returns the closest places with distance, address and hours, or one question to ask when the place is unclear.',
+      parameters: {
+        type: 'object',
+        properties: {
+          place: { type: 'string', description: 'The place as the caller said it, e.g. "Parklands, Cape Town" or "7441".' },
+          what: { type: 'string', enum: ['clinic', 'pharmacy'], description: 'clinic for a Netclinic clinic, pharmacy for a Medirite pharmacy.' }
+        },
+        required: ['place', 'what']
+      }
+    },
+    {
+      type: 'function',
+      name: 'ask_for_person',
+      description: 'Ask Netclinic\'s team to phone the caller back, when they want a person or need something this line cannot do (refunds, complaints, changing or cancelling a booking, results, documents, a visit they already have).',
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: 'What the caller needs, in a short sentence for the team.' }
+        },
+        required: ['reason']
+      }
+    }
+  ];
+
   const normalized = normalizeServiceMode(mode);
   if (normalized === 'health') return healthTools;
   const emergencyTool = healthTools.find((tool) => tool.name === 'handle_emergency');
   const assessmentTool = healthTools.find((tool) => tool.name === 'health_assessment');
   const providerTool = healthTools.find((tool) => tool.name === 'find_clinics');
   if (normalized === 'selfcare') return [assessmentTool, emergencyTool, providerTool, ...selfcareTools];
+  if (normalized === 'netclinic') return [emergencyTool, ...netclinicTools];
   if (normalized === 'jozi') return [emergencyTool, ...supportTools];
   return [assessmentTool, emergencyTool, ...supportTools];
 }
@@ -4638,6 +4993,8 @@ function joziDemoEnabled(env) {
 
 function realtimeVoiceForMode(env, serviceMode) {
   if (modeIncludesJozi(serviceMode)) return env.JOZI_REALTIME_VOICE || 'marin';
+  // Owner's choice, 4 October 2026, from all fourteen gpt-live-1 voices: Quartz (Australian English, closest to South African).
+  if (normalizeServiceMode(serviceMode) === 'netclinic') return env.NETCLINIC_REALTIME_VOICE || 'quartz';
   if (normalizeServiceMode(serviceMode) === 'selfcare') {
     return env.SELFCARE_REALTIME_VOICE || env.OPENAI_REALTIME_VOICE || DEFAULT_VOICE;
   }
@@ -4656,11 +5013,16 @@ function selfcareLineEnabled(env) {
   return String(env.SELFCARE_LINE_ENABLED || 'false').toLowerCase() === 'true';
 }
 
+function netclinicLineEnabled(env) {
+  return String(env.NETCLINIC_LINE_ENABLED || 'false').toLowerCase() === 'true';
+}
+
 function lineModeEnabled(env, mode) {
   const normalized = normalizeServiceMode(mode);
   if (normalized === 'health') return healthLineEnabled(env);
   if (normalized === 'jozi') return joziLineEnabled(env);
   if (normalized === 'selfcare') return selfcareLineEnabled(env);
+  if (normalized === 'netclinic') return netclinicLineEnabled(env);
   return false;
 }
 
@@ -4669,6 +5031,7 @@ function activeLineConfigurationIsValid(env) {
   if (healthLineEnabled(env)) numbers.push(asE164(env.HEALTH_PHONE_NUMBER || ''));
   if (joziLineEnabled(env)) numbers.push(asE164(env.JOZI_PHONE_NUMBER || ''));
   if (selfcareLineEnabled(env)) numbers.push(asE164(env.SELFCARE_PHONE_NUMBER || ''));
+  if (netclinicLineEnabled(env)) numbers.push(asE164(env.NETCLINIC_PHONE_NUMBER || ''));
   return numbers.length > 0 && numbers.every(Boolean) && new Set(numbers).size === numbers.length;
 }
 
@@ -4701,6 +5064,32 @@ async function selfcareBridgeRequest(env, path, options = {}) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) return { ok: false, error: `bridge ${response.status}`, data };
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error).slice(0, 200) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* Netclinic's server holds the knowledge, the place list and the Chatwoot record; this Worker holds only a bearer
+   token for its voice routes (NETCLINIC_API_URL + /api/integrations/voice/…). */
+async function netclinicApiRequest(env, path, options = {}) {
+  if (!env.NETCLINIC_API_URL || !env.NETCLINIC_API_TOKEN) return { ok: false, error: 'netclinic api not configured' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort('timeout'), Number(options.timeoutMs) || DEFAULT_NETCLINIC_EVENT_TIMEOUT_MS);
+  try {
+    const response = await fetch(String(env.NETCLINIC_API_URL).replace(/\/$/, '') + path, {
+      method: options.method || 'GET',
+      headers: {
+        Authorization: `Bearer ${env.NETCLINIC_API_TOKEN}`,
+        ...(options.body ? { 'Content-Type': 'application/json' } : {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, error: `netclinic ${response.status}`, data };
     return { ok: true, data };
   } catch (error) {
     return { ok: false, error: String(error?.message || error).slice(0, 200) };

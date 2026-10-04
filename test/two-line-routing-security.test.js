@@ -162,9 +162,9 @@ test('voice routing stores the verified caller and both verified line attributes
   assert.match(voiceHandler, /setCallProfile\s*\(\s*callSid\s*,\s*\{/);
   assert.match(voiceHandler, /serviceMode/);
   assert.match(voiceHandler, /const\s+callerPhone\s*=\s*asE164\(form\.From/);
-  // Caller phone may be stored only for the persisting lines (health, selfcare) — never for the
+  // Caller phone may be stored only for the persisting lines (health, selfcare, netclinic) — never for the
   // privacy-first Jozi profile. The allowlist form makes 'jozi' impossible by construction.
-  assert.match(voiceHandler, /callerPhone\s*:\s*\['health',\s*'selfcare'\]\.includes\(serviceMode\)\s*&&\s*isUsablePatientPhone\(callerPhone\)\s*\?\s*callerPhone\s*:\s*null/);
+  assert.match(voiceHandler, /callerPhone\s*:\s*\['health',\s*'selfcare',\s*'netclinic'\]\.includes\(serviceMode\)\s*&&\s*isUsablePatientPhone\(callerPhone\)\s*\?\s*callerPhone\s*:\s*null/);
   assert.doesNotMatch(voiceHandler, /\[[^\]]*'jozi'[^\]]*\]\.includes\(serviceMode\)\s*&&\s*isUsablePatientPhone/);
   assert.match(voiceHandler, /destinationPhone\s*:\s*(?:asE164\()?form\.To/);
 });
