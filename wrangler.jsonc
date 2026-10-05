@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "voice-selfcare",
+  "account_id": "b048ea3aa3d97e55d690771cff6e423c",
   "main": "src/cloudflare-worker.js",
   "compatibility_date": "2026-05-14",
   "durable_objects": {
@@ -35,8 +36,13 @@
     "head_sampling_rate": 1
   },
   "vars": {
+    "OPENAI_VOICE_API": "live",
+    "OPENAI_LIVE_MODEL": "gpt-live-1",
+    "OPENAI_LIVE_BACKEND_MODEL": "gpt-5.6-terra",
+    "OPENAI_LIVE_BACKEND_SERVICE_TIER": "auto",
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2",
     "OPENAI_REALTIME_VOICE": "marin",
+    "JOZI_REALTIME_VOICE": "marin",
     "OPENAI_SUMMARY_MODEL": "gpt-5.5",
     "OPENAI_MEMORY_MODEL": "gpt-5.5",
     "OPENAI_PROVIDER_MODEL": "gpt-5.4-mini",
@@ -48,7 +54,27 @@
     "TELEPHONY_CODEC": "g711_ulaw",
     "VAD_SILENCE_MS": "1200",
     "FINALIZE_IDLE_MS": "120000",
+    "OPENAI_LIVE_FINALIZE_DRAIN_MS": "1500",
     "PROVIDER_LOOKUP_TIMEOUT_MS": "2500",
-    "CALLER_MEMORY_ENABLED": "true"
+    "SERVICE_MODE": "health",
+    // The legacy /health path is intentionally off. +1 206 is Self Care and +1 425 is Jozi.
+    "HEALTH_LINE_ENABLED": "false",
+    "JOZI_LINE_ENABLED": "true",
+    "HEALTH_PHONE_NUMBER": "+12063098528",
+    "JOZI_PHONE_NUMBER": "+14255173281",
+    "SELFCARE_LINE_ENABLED": "true",
+    "SELFCARE_PHONE_NUMBER": "+12063098528",
+    "SELFCARE_BRIDGE_URL": "https://singularcare-selfcare.hao-aa5.workers.dev",
+    "SELFCARE_REALTIME_VOICE": "marin",
+    // Netclinic's line (+27 60 011 2421, on Netclinic's own Twilio account). Secrets: NETCLINIC_API_TOKEN, and
+    // NETCLINIC_TWILIO_URL_KEY (or NETCLINIC_TWILIO_AUTH_TOKEN). Its tools and record are on NETCLINIC_API_URL.
+    "NETCLINIC_LINE_ENABLED": "true",
+    "NETCLINIC_PHONE_NUMBER": "+27600112421",
+    "NETCLINIC_REALTIME_VOICE": "quartz",
+    "NETCLINIC_API_URL": "https://netclinic.singularcare.ai",
+    "JOZI_DEMO_MODE": "true",
+    "AUTOMATIC_FOLLOWUP_ENABLED": "true",
+    "CALLER_MEMORY_ENABLED": "true",
+    "JOZI_TRANSCRIPT_TTL_DAYS": "7"
   }
 }
