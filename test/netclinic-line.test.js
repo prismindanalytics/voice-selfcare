@@ -148,11 +148,18 @@ test('the booking link carries the caller\'s words and who it is for, filled in 
   assert.doesNotMatch(prompt, /confirm their number with the code they get/);
 });
 
-test('Netty names the places the server chose, offers the rest only when asked, and an online doctor when far (5 October 2026)', () => {
-  // The server decides which clinics to name (mockups voice-line.js nearestPlaces: places, next, far); a rule asking the
-  // model to compare distances itself was not followed on a test call.
-  assert.match(source, /For find_nearest_netclinic, name every place in places \(one, or two about as close\)/);
-  assert.match(source, /If far is true, say how far that is and offer an online doctor instead\./);
-  assert.match(source, /Offer the places in next only if the caller asks for another\./);
-  assert.doesNotMatch(source, /within about a kilometre of it/);
+test('Netty says the line the server wrote for the nearest clinic, and knows the clinics (5 October 2026)', () => {
+  // Five test calls: the model named one of two clinics it was given, and answered a misheard place without saying it
+  // back. The server now writes the line (mockups voice-line.js nearestPlaces voiceResponse), starting with the place.
+  assert.match(source, /For find_nearest_netclinic, say its voiceResponse as it is\. It begins with the place as you understood it, so the caller can correct you: if they do, call it again with their place\./);
+  assert.match(source, /Give a place\\'s street or other hours from places, or a place from next, only when the caller asks\./);
+  assert.doesNotMatch(source, /name every place in places|within about a kilometre of it/);
+  // The clinic list joins her instructions once a call, read within two seconds, kept an hour; the call goes on without it.
+  const helper = sourceBetween('async function netclinicClinicSection(env, call) {', 'async function netclinicApiRequest');
+  assert.match(helper, /netclinicApiRequest\(env, '\/api\/integrations\/voice\/clinics', \{ method: 'POST', timeoutMs: 2000, body: \{ call \} \}\)/);
+  assert.match(helper, /For the nearest one to a place, call find_nearest_netclinic: it measures the distance, and you do not\./);
+  assert.match(source, /const NETCLINIC_CLINICS_TTL_MS = 60 \* 60 \* 1000;/);
+  const accept = sourceBetween('async acceptCall(callId, options = {}) {', 'this.setMeta(\'last_stage\', \'accepting_call\');');
+  assert.match(accept, /serviceMode === 'netclinic' && !simpleInstructions\s*\? await netclinicClinicSection\(this\.env, \{ \.\.\.this\.netclinicCallInfo\(\), id: callId \}\)/);
+  assert.match(accept, /backendInstructions: buildLiveBackendInstructions\(serviceMode, serviceInstructions\)/);
 });

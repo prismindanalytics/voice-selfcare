@@ -296,7 +296,7 @@ Call handle_emergency immediately, then tell them to call an ambulance on one ze
 const NETCLINIC_ACTION_RESPONSE_INSTRUCTIONS = [
   "Answer in one to three short spoken sentences, warm and calm, in the caller's language.",
   'For netclinic_answer, say its answer naturally and briefly. Never read links, markdown, lists or source names; say a web address the way people say it (virtual dot netclinic dot co dot za) and read numbers and prices slowly.',
-  'For find_nearest_netclinic, name every place in places (one, or two about as close): its name, its street, how far it is, and today\'s hours when known. If far is true, say how far that is and offer an online doctor instead. Offer the places in next only if the caller asks for another. If it returned a question, ask it once and wait. If it found nothing, ask once for a nearby town or postcode.',
+  'For find_nearest_netclinic, say its voiceResponse as it is. It begins with the place as you understood it, so the caller can correct you: if they do, call it again with their place. Give a place\'s street or other hours from places, or a place from next, only when the caller asks. If it returned a question, ask it once and wait. If it found nothing, ask once for a nearby town or postcode.',
   'For ask_for_person, say what its voiceResponse says and nothing more about timing.',
   'For send_booking_link and send_visit_link, say how the link went (by text or WhatsApp) and the one next step. If it asked a question, ask it once and wait. If it could not send, say so and offer WhatsApp on this number or a call back.',
   'If a tool failed, say so in one sentence and offer the next best step. Never invent the missing fact.',
@@ -627,9 +627,14 @@ export class CallSession extends DurableObject {
     const demoEnabled = joziDemoEnabled(this.env);
 
     const lineContext = this.getMeta('line_context') || '';
-    const serviceInstructions = simpleInstructions
+    const baseInstructions = simpleInstructions
       ? buildMinimalInstructions(serviceMode)
       : buildServiceInstructions(serviceMode, memoryContext, lineContext);
+    // Netclinic's clinics, so Netty knows which areas have one (NETTY KNOWS THE CLINICS); the call goes on without them.
+    const clinicSection = serviceMode === 'netclinic' && !simpleInstructions
+      ? await netclinicClinicSection(this.env, { ...this.netclinicCallInfo(), id: callId })
+      : '';
+    const serviceInstructions = clinicSection ? `${baseInstructions}\n\n${clinicSection}` : baseInstructions;
     const payload = voiceApi === 'live'
       ? buildLiveAcceptPayload({
           model,
@@ -5136,6 +5141,24 @@ async function selfcareBridgeRequest(env, path, options = {}) {
 
 /* Netclinic's server holds the knowledge, the place list and the Chatwoot record; this Worker holds only a bearer
    token for its voice routes (NETCLINIC_API_URL + /api/integrations/voice/…). */
+/* NETTY KNOWS THE CLINICS (owner, 5 October 2026: "can it use its intelligence to locate and find the nearest clinic or do we
+   need a function call" — both: she knows the list, the tool measures the distance). Netclinic's server lists its clinics
+   (POST /api/integrations/voice/clinics), read once a call within two seconds and kept an hour in this isolate, so she
+   knows which areas have one (Brackenfell has two) and answers "is there one in …" herself. Without it the call goes on
+   as before. */
+const NETCLINIC_CLINICS_TTL_MS = 60 * 60 * 1000;
+let netclinicClinicsCache = null;
+async function netclinicClinicSection(env, call) {
+  if (netclinicClinicsCache && Date.now() - netclinicClinicsCache.at < NETCLINIC_CLINICS_TTL_MS) return netclinicClinicsCache.text;
+  const listed = await netclinicApiRequest(env, '/api/integrations/voice/clinics', { method: 'POST', timeoutMs: 2000, body: { call } });
+  const lines = listed.ok && typeof listed.data?.text === 'string' ? listed.data.text.trim() : '';
+  if (!lines) return '';
+  const text = "## NETCLINIC'S WALK-IN CLINICS\nThese are all of Netclinic's walk-in clinics. Use the list to know which areas have one. " +
+    'For the nearest one to a place, call find_nearest_netclinic: it measures the distance, and you do not.\n' + lines.slice(0, 4000);
+  netclinicClinicsCache = { at: Date.now(), text };
+  return text;
+}
+
 async function netclinicApiRequest(env, path, options = {}) {
   if (!env.NETCLINIC_API_URL || !env.NETCLINIC_API_TOKEN) return { ok: false, error: 'netclinic api not configured' };
   const controller = new AbortController();
