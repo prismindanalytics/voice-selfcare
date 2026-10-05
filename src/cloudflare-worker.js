@@ -296,7 +296,7 @@ Call handle_emergency immediately, then tell them to call an ambulance on one ze
 const NETCLINIC_ACTION_RESPONSE_INSTRUCTIONS = [
   "Answer in one to three short spoken sentences, warm and calm, in the caller's language.",
   'For netclinic_answer, say its answer naturally and briefly. Never read links, markdown, lists or source names; say a web address the way people say it (virtual dot netclinic dot co dot za) and read numbers and prices slowly.',
-  'For find_nearest_netclinic, give the first place: its name, its street, how far it is, and today\'s hours when known. Offer the next one only if the caller asks. If it returned a question, ask it once and wait. If it found nothing, ask once for a nearby town or postcode.',
+  'For find_nearest_netclinic, name every place in places (one, or two about as close): its name, its street, how far it is, and today\'s hours when known. If far is true, say how far that is and offer an online doctor instead. Offer the places in next only if the caller asks for another. If it returned a question, ask it once and wait. If it found nothing, ask once for a nearby town or postcode.',
   'For ask_for_person, say what its voiceResponse says and nothing more about timing.',
   'For send_booking_link and send_visit_link, say how the link went (by text or WhatsApp) and the one next step. If it asked a question, ask it once and wait. If it could not send, say so and offer WhatsApp on this number or a call back.',
   'If a tool failed, say so in one sentence and offer the next best step. Never invent the missing fact.',
@@ -2422,7 +2422,11 @@ async function handleOpenAIWebhook(request, env, ctx, minimal) {
   const rawBody = await request.text();
   if (env.OPENAI_WEBHOOK_SECRET) {
     const verified = await verifyStandardWebhook(request.headers, rawBody, env.OPENAI_WEBHOOK_SECRET);
-    if (!verified) return textResponse('Invalid signature', 400);
+    if (!verified) {
+      // Said in the log: a project's signing secret that does not match is otherwise a silent failed call.
+      console.warn('[Webhook] Invalid signature');
+      return textResponse('Invalid signature', 400);
+    }
   }
 
   let event;
@@ -2433,7 +2437,12 @@ async function handleOpenAIWebhook(request, env, ctx, minimal) {
   }
 
   const incomingVoiceApi = voiceApiForIncomingEvent(event);
-  if (!incomingVoiceApi || incomingVoiceApi !== configuredVoiceApi) return textResponse('OK');
+  if (!incomingVoiceApi || incomingVoiceApi !== configuredVoiceApi) {
+    // An event of another API (a project subscribed to the wrong events) is answered and named, never acted on.
+    console.warn('[Webhook] Ignored event', JSON.stringify({ type: String(event?.type || '').slice(0, 60), voiceApi: incomingVoiceApi,
+      configured: configuredVoiceApi }));
+    return textResponse('OK');
+  }
   if (event?.type === 'live.transport.incoming' && event?.data?.type !== 'sip') return textResponse('OK');
 
   const callId = voiceSessionId(event, incomingVoiceApi);

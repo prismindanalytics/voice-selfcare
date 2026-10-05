@@ -147,3 +147,12 @@ test('the booking link carries the caller\'s words and who it is for, filled in 
   // Opening the link signs their number in: there is no code to promise.
   assert.doesNotMatch(prompt, /confirm their number with the code they get/);
 });
+
+test('Netty names the places the server chose, offers the rest only when asked, and an online doctor when far (5 October 2026)', () => {
+  // The server decides which clinics to name (mockups voice-line.js nearestPlaces: places, next, far); a rule asking the
+  // model to compare distances itself was not followed on a test call.
+  assert.match(source, /For find_nearest_netclinic, name every place in places \(one, or two about as close\)/);
+  assert.match(source, /If far is true, say how far that is and offer an online doctor instead\./);
+  assert.match(source, /Offer the places in next only if the caller asks for another\./);
+  assert.doesNotMatch(source, /within about a kilometre of it/);
+});
