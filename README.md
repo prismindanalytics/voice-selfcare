@@ -292,7 +292,9 @@ The demo scripts and exact expected routes are in [`docs/jozi-demo-journeys.md`]
 
 ## Netclinic line
 
-Netclinic's number `+27 60 011 2421` → `/twilio/voice/netclinic` (owner, 4 October 2026). Netty answers in the `quartz` voice (Australian English, the closest of the fourteen GPT-Live voices to South African English; chosen by the owner from a recorded audition), with a South African cadence and a short pronunciation list in the prompt.
+Netclinic's number `+27 60 011 2421` → `/twilio/voice/netclinic` (owner, 4 October 2026).
+
+**Branch: `netclinic`** (owner, 5 October 2026; made from `codex/jozi-support-demo` at `9ef2d6d`, the code then live). Netclinic's line is built and deployed from it. The Worker is shared with the Jozi and Self Care demo lines, so deploy only from `netclinic` or a branch that contains it: a deploy from a branch without it puts Netclinic's line back to that branch's code, or takes it off. Netty answers in the `quartz` voice (Australian English, the closest of the fourteen GPT-Live voices to South African English; chosen by the owner from a recorded audition), with a South African cadence and a short pronunciation list in the prompt.
 
 - **What Netty does:** health questions from her own medical judgment, with warning-sign screening and the 10177 / 112 emergency route; anything about Netclinic through `netclinic_answer` (Netclinic's reviewed knowledge, the same answer as its web chat); the nearest Netclinic clinic or Medirite pharmacy through `find_nearest_netclinic`; and `ask_for_person`, which asks Netclinic's team to phone the caller back. Booking is not on this line yet: Netty tells callers to WhatsApp the same number or use virtual.netclinic.co.za.
 - **Where the call goes:** Netclinic's server (`NETCLINIC_API_URL`, bearer `NETCLINIC_API_TOKEN`) answers the tools under `/api/integrations/voice/…` and keeps the call in its Chatwoot Phone inbox. Finished turns are posted as the call runs (one after another, so they stay in order), flags for an emergency or a request for a person straight away, and the summary when the call ends. A failed post never stops the call.
