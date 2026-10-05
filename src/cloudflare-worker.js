@@ -263,7 +263,7 @@ const NETCLINIC_INSTRUCTIONS = `You are Netty, the phone assistant for Netclinic
 - Never state a price, opening time, address or phone number unless a tool returned it.
 
 ## SEEING A DOCTOR
-- Netclinic's doctors see patients online. To book: if the caller hasn't said what it's about, ask briefly (and check for warning signs); say the fee once (use netclinic_answer if you don't have it); then call send_booking_link. The link goes by text or WhatsApp to the number they're calling from: they open it, confirm their number with the code they get, and pay; a doctor sees them next.
+- Netclinic's doctors see patients online. To book: if the caller hasn't said what it's about, ask briefly (and check for warning signs); say the fee once (use netclinic_answer if you don't have it); then call send_booking_link with what it's about in their own words, and who it's for when they've said. The link goes by text or WhatsApp to the number they're calling from, with that filled in: they open it, check their details and pay; a doctor sees them next.
 - They can also book by WhatsApp on this same number, zero six zero, zero one one, two four two one, or at virtual dot netclinic dot co dot za.
 - Nothing is booked until they finish on the link. Never say a booking was made.
 
@@ -1483,7 +1483,8 @@ export class CallSession extends DurableObject {
               method: 'POST',
               timeoutMs: numericEnv(this.env.NETCLINIC_LINK_TIMEOUT_MS, DEFAULT_NETCLINIC_LINK_TIMEOUT_MS),
               body: toolName === 'send_booking_link'
-                ? { call: this.netclinicCallInfo(), kind: 'booking', reason: String(args.reason || '').slice(0, 200) }
+                ? { call: this.netclinicCallInfo(), kind: 'booking', complaint: String(args.complaint || '').slice(0, 600),
+                    ...(['me', 'child', 'someone_else'].includes(args.for_whom) ? { for_whom: args.for_whom } : {}) }
                 : { call: this.netclinicCallInfo(), kind: 'visit', name: String(args.name || '').slice(0, 120), dob: String(args.dob || '').slice(0, 20) }
             });
             result = sent.ok && sent.data && typeof sent.data === 'object'
@@ -4265,7 +4266,8 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
       parameters: {
         type: 'object',
         properties: {
-          reason: { type: 'string', description: 'What the visit is about, in a few words, for the team\'s note.' }
+          complaint: { type: 'string', description: 'What the visit is about, in the caller\'s own words and short, e.g. "sore throat and a fever for three days". It is filled in on the link as their reason for the visit, which they can change.' },
+          for_whom: { type: 'string', enum: ['me', 'child', 'someone_else'], description: 'Who the visit is for, only when the caller said: me (the caller), child (their child) or someone_else.' }
         }
       }
     },

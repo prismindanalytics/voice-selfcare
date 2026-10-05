@@ -135,3 +135,15 @@ test('turns, flags and the end of a call go to Netclinic\'s server in order, nev
   assert.ok(finalize.indexOf("this.forwardNetclinicTurns({ trailing: 'all' })") < finalize.indexOf('this.flushPendingLiveTranscripts()'));
   assert.match(finalize, /netclinic_end_posted/);
 });
+
+test('the booking link carries the caller\'s words and who it is for, filled in on the link (5 October 2026)', () => {
+  const tools = sourceBetween('const netclinicTools = [', 'const normalized = normalizeServiceMode(mode);');
+  assert.match(tools, /complaint: \{ type: 'string', description: 'What the visit is about, in the caller\\'s own words and short/);
+  assert.match(tools, /for_whom: \{ type: 'string', enum: \['me', 'child', 'someone_else'\]/);
+  assert.match(source, /kind: 'booking', complaint: String\(args\.complaint \|\| ''\)\.slice\(0, 600\),/);
+  assert.match(source, /\.\.\.\(\['me', 'child', 'someone_else'\]\.includes\(args\.for_whom\) \? \{ for_whom: args\.for_whom \} : \{\}\)/);
+  const prompt = sourceBetween('const NETCLINIC_INSTRUCTIONS = `', '`;');
+  assert.match(prompt, /with that filled in: they open it, check their details and pay/);
+  // Opening the link signs their number in: there is no code to promise.
+  assert.doesNotMatch(prompt, /confirm their number with the code they get/);
+});
