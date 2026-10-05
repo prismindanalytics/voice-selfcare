@@ -95,7 +95,7 @@ test('Netty greets as Netclinic and says the call is transcribed', () => {
 
 test('the netclinic line has its own tools, voice and prompt rules', () => {
   const tools = sourceBetween('const netclinicTools = [', 'const normalized = normalizeServiceMode(mode);');
-  for (const name of ['netclinic_answer', 'find_nearest_netclinic', 'send_booking_link', 'send_visit_link', 'ask_for_person']) {
+  for (const name of ['netclinic_answer', 'find_nearest_netclinic', 'send_booking_link', 'send_visit_link', 'ask_for_person', 'send_clinic_details']) {
     assert.match(tools, new RegExp(`name: '${name}'`));
   }
   assert.match(source, /if \(normalized === 'netclinic'\) return \[emergencyTool, \.\.\.netclinicTools\];/);
@@ -162,4 +162,13 @@ test('Netty says the line the server wrote for the nearest clinic, and knows the
   const accept = sourceBetween('async acceptCall(callId, options = {}) {', 'this.setMeta(\'last_stage\', \'accepting_call\');');
   assert.match(accept, /serviceMode === 'netclinic' && !simpleInstructions\s*\? await netclinicClinicSection\(this\.env, \{ \.\.\.this\.netclinicCallInfo\(\), id: callId \}\)/);
   assert.match(accept, /backendInstructions: buildLiveBackendInstructions\(serviceMode, serviceInstructions\)/);
+});
+
+test('a clinic\'s address, map and booking link go by text or WhatsApp, and nothing else is offered (5 October 2026)', () => {
+  // Owner: "we should send the clinic address through whatsapp or sms"; Netty had offered to "send you directions".
+  const prompt = sourceBetween('const NETCLINIC_INSTRUCTIONS = `', '`;');
+  assert.match(prompt, /To have a clinic's address, map and booking link, or to book a visit at a clinic, call send_clinic_details/);
+  assert.match(prompt, /Offer nothing else you cannot send, such as directions\./);
+  assert.match(source, /body: \{ call: this\.netclinicCallInfo\(\), kind: 'clinic', clinics \}/);
+  assert.match(source, /For send_booking_link, send_visit_link and send_clinic_details, say how it went \(by text or WhatsApp\)/);
 });

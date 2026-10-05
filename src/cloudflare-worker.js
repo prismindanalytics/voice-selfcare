@@ -275,6 +275,7 @@ const NETCLINIC_INSTRUCTIONS = `You are Netty, the phone assistant for Netclinic
 ## NEAREST CLINIC OR PHARMACY
 - Ask where they are (suburb, town, street or postcode) unless they said it, then call find_nearest_netclinic once with what they want: a Netclinic clinic or a Medirite pharmacy.
 - If it asks a question (for example which Parklands), ask it once and wait for the answer.
+- To have a clinic's address, map and booking link, or to book a visit at a clinic, call send_clinic_details with the clinic's name (or the two you named). It goes by text or WhatsApp to the number they're calling from. Offer nothing else you cannot send, such as directions.
 
 ## A DOCTOR PHONED THEM
 - If the caller says a Netclinic doctor tried to phone them, tell them to open their visit from the link Netclinic sent them by text or WhatsApp, where their doctor can see them, and to keep their phone close in case the doctor phones again. You can't connect them to the doctor on this line.
@@ -298,7 +299,7 @@ const NETCLINIC_ACTION_RESPONSE_INSTRUCTIONS = [
   'For netclinic_answer, say its answer naturally and briefly. Never read links, markdown, lists or source names; say a web address the way people say it (virtual dot netclinic dot co dot za) and read numbers and prices slowly.',
   'For find_nearest_netclinic, say its voiceResponse as it is. It begins with the place as you understood it, so the caller can correct you: if they do, call it again with their place. Give a place\'s street or other hours from places, or a place from next, only when the caller asks. If it returned a question, ask it once and wait. If it found nothing, ask once for a nearby town or postcode.',
   'For ask_for_person, say what its voiceResponse says and nothing more about timing.',
-  'For send_booking_link and send_visit_link, say how the link went (by text or WhatsApp) and the one next step. If it asked a question, ask it once and wait. If it could not send, say so and offer WhatsApp on this number or a call back.',
+  'For send_booking_link, send_visit_link and send_clinic_details, say how it went (by text or WhatsApp) and the one next step. If it asked a question, ask it once and wait. If it could not send, say what its voiceResponse says, or offer WhatsApp on this number or a call back.',
   'If a tool failed, say so in one sentence and offer the next best step. Never invent the missing fact.',
   'Do not add a long recap.'
 ].join(' ');
@@ -1478,6 +1479,21 @@ export class CallSession extends DurableObject {
             result = found.ok && found.data && typeof found.data === 'object'
               ? { success: true, ...found.data }
               : { success: false, error: found.error || 'lookup unavailable', voiceResponse: "I couldn't look that up just now." };
+            break;
+          }
+
+        case 'send_clinic_details':
+          {
+            const clinics = (Array.isArray(args.clinics) ? args.clinics : [args.clinics]).map((name) => String(name || '').slice(0, 80)).filter(Boolean).slice(0, 2);
+            const sent = await netclinicApiRequest(this.env, '/api/integrations/voice/link', {
+              method: 'POST',
+              timeoutMs: numericEnv(this.env.NETCLINIC_LINK_TIMEOUT_MS, DEFAULT_NETCLINIC_LINK_TIMEOUT_MS),
+              body: { call: this.netclinicCallInfo(), kind: 'clinic', clinics }
+            });
+            result = sent.ok && sent.data && typeof sent.data === 'object'
+              ? { success: sent.data.status === 'sent', ...sent.data }
+              : { success: false, status: 'not_sent', reason: sent.error || 'unavailable',
+                  voiceResponse: "I couldn't send it just now. I can say the address again, or you can WhatsApp this number." };
             break;
           }
 
@@ -4283,6 +4299,18 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
           complaint: { type: 'string', description: 'What the visit is about, in the caller\'s own words and short, e.g. "sore throat and a fever for three days". It is filled in on the link as their reason for the visit, which they can change.' },
           for_whom: { type: 'string', enum: ['me', 'child', 'someone_else'], description: 'Who the visit is for, only when the caller said: me (the caller), child (their child) or someone_else.' }
         }
+      }
+    },
+    {
+      type: 'function',
+      name: 'send_clinic_details',
+      description: 'Text the caller a Netclinic clinic\'s address, hours, map link and booking link, by text or WhatsApp to the number they are calling from. Use it after naming the clinic, when they want its details or to book a visit there.',
+      parameters: {
+        type: 'object',
+        properties: {
+          clinics: { type: 'array', items: { type: 'string' }, maxItems: 2, description: 'The clinic name or the two names as you said them, e.g. "Netclinic Protea Heights".' }
+        },
+        required: ['clinics']
       }
     },
     {
