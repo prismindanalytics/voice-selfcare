@@ -71,7 +71,7 @@
     "NETCLINIC_LINE_ENABLED": "true",
     "NETCLINIC_PHONE_NUMBER": "+27600112421",
     "NETCLINIC_REALTIME_VOICE": "quartz",
-    "NETCLINIC_API_URL": "https://test.singularcare.ai",
+    "NETCLINIC_API_URL": "https://netclinic.singularcare.ai",
     "JOZI_DEMO_MODE": "true",
     "AUTOMATIC_FOLLOWUP_ENABLED": "true",
     "CALLER_MEMORY_ENABLED": "true",
