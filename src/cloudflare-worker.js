@@ -61,6 +61,7 @@ const DEFAULT_PROVIDER_LOOKUP_TIMEOUT_MS = 2500;
 const DEFAULT_NETCLINIC_ANSWER_TIMEOUT_MS = 9000;
 const DEFAULT_NETCLINIC_NEAREST_TIMEOUT_MS = 5000;
 const DEFAULT_NETCLINIC_EVENT_TIMEOUT_MS = 5000;
+const DEFAULT_NETCLINIC_LINK_TIMEOUT_MS = 9000;
 const CALLER_MEMORY_PREFIX = 'caller_memory/';
 // Why Netclinic's server sent a call to Netty (its ?context=): a patient phoning back a doctor who could not answer.
 const LINE_CONTEXTS = ['doctor_missed'];
@@ -262,8 +263,14 @@ const NETCLINIC_INSTRUCTIONS = `You are Netty, the phone assistant for Netclinic
 - Never state a price, opening time, address or phone number unless a tool returned it.
 
 ## SEEING A DOCTOR
-- Netclinic's doctors see patients online. The easiest way is to send a WhatsApp message to this same number, zero six zero, zero one one, two four two one, saying "I want to see a doctor": Netty books them in on WhatsApp. They can also book at virtual dot netclinic dot co dot za.
-- You cannot book on this call. Never say a booking was made.
+- Netclinic's doctors see patients online. To book: if the caller hasn't said what it's about, ask briefly (and check for warning signs); say the fee once (use netclinic_answer if you don't have it); then call send_booking_link. The link goes by text or WhatsApp to the number they're calling from: they open it, confirm their number with the code they get, and pay; a doctor sees them next.
+- They can also book by WhatsApp on this same number, zero six zero, zero one one, two four two one, or at virtual dot netclinic dot co dot za.
+- Nothing is booked until they finish on the link. Never say a booking was made.
+
+## A VISIT THEY ALREADY HAVE
+- For documents, a sick note, a script, changing or cancelling a visit, or "nobody has phoned me", call send_visit_link. It texts the visit's own link to the number they're calling from; that link shows their doctor's status and their documents, and lets them change or cancel.
+- If it asks who the visit is for, ask for the patient's full name and date of birth once, then call it again with them. If the details don't match, don't guess: offer ask_for_person.
+- Say a visit's day, time or status only when the tool returned it.
 
 ## NEAREST CLINIC OR PHARMACY
 - Ask where they are (suburb, town, street or postcode) unless they said it, then call find_nearest_netclinic once with what they want: a Netclinic clinic or a Medirite pharmacy.
@@ -273,13 +280,13 @@ const NETCLINIC_INSTRUCTIONS = `You are Netty, the phone assistant for Netclinic
 - If the caller says a Netclinic doctor tried to phone them, tell them to open their visit from the link Netclinic sent them by text or WhatsApp, where their doctor can see them, and to keep their phone close in case the doctor phones again. You can't connect them to the doctor on this line.
 
 ## A PERSON ON THE TEAM
-- If the caller asks for a person, or needs something you can't do on this line (a refund, a complaint, changing or cancelling a booking, results, documents, a visit they already have), call ask_for_person with a short reason. Netclinic's team phones them back on the number they're calling from. Don't promise a time.
+- If the caller asks for a person, or needs something you can't do on this line (a refund, a complaint, results, anything send_visit_link could not sort out), call ask_for_person with a short reason. Netclinic's team phones them back on the number they're calling from. Don't promise a time.
 
 ## EMERGENCIES
 Call handle_emergency immediately, then tell them to call an ambulance on one zero one seven seven, or one one two from a cell phone.
 
 ## WHAT YOU NEVER DO
-- You have no patient records, visits or documents on this line. Never read or guess them.
+- You never read a patient's records, documents or anything clinical on this line; their own link shows them. Never guess them.
 - Never invent prices, hours, addresses, phone numbers, availability or bookings.
 
 ## VOICE CONSTRAINTS
@@ -291,6 +298,7 @@ const NETCLINIC_ACTION_RESPONSE_INSTRUCTIONS = [
   'For netclinic_answer, say its answer naturally and briefly. Never read links, markdown, lists or source names; say a web address the way people say it (virtual dot netclinic dot co dot za) and read numbers and prices slowly.',
   'For find_nearest_netclinic, give the first place: its name, its street, how far it is, and today\'s hours when known. Offer the next one only if the caller asks. If it returned a question, ask it once and wait. If it found nothing, ask once for a nearby town or postcode.',
   'For ask_for_person, say what its voiceResponse says and nothing more about timing.',
+  'For send_booking_link and send_visit_link, say how the link went (by text or WhatsApp) and the one next step. If it asked a question, ask it once and wait. If it could not send, say so and offer WhatsApp on this number or a call back.',
   'If a tool failed, say so in one sentence and offer the next best step. Never invent the missing fact.',
   'Do not add a long recap.'
 ].join(' ');
@@ -1465,6 +1473,23 @@ export class CallSession extends DurableObject {
             result = found.ok && found.data && typeof found.data === 'object'
               ? { success: true, ...found.data }
               : { success: false, error: found.error || 'lookup unavailable', voiceResponse: "I couldn't look that up just now." };
+            break;
+          }
+
+        case 'send_booking_link':
+        case 'send_visit_link':
+          {
+            const sent = await netclinicApiRequest(this.env, '/api/integrations/voice/link', {
+              method: 'POST',
+              timeoutMs: numericEnv(this.env.NETCLINIC_LINK_TIMEOUT_MS, DEFAULT_NETCLINIC_LINK_TIMEOUT_MS),
+              body: toolName === 'send_booking_link'
+                ? { call: this.netclinicCallInfo(), kind: 'booking', reason: String(args.reason || '').slice(0, 200) }
+                : { call: this.netclinicCallInfo(), kind: 'visit', name: String(args.name || '').slice(0, 120), dob: String(args.dob || '').slice(0, 20) }
+            });
+            result = sent.ok && sent.data && typeof sent.data === 'object'
+              ? { success: sent.data.status === 'sent', ...sent.data }
+              : { success: false, status: 'not_sent', reason: sent.error || 'unavailable',
+                  voiceResponse: "I couldn't send the link just now. You can WhatsApp this number, or I can ask the team to phone you." };
             break;
           }
 
@@ -3795,6 +3820,8 @@ function buildLiveFrontendInstructions(mode, lineContext = '') {
         '- Health guidance: your own medical judgment for symptoms, warning signs, self-care, and when and where to be seen.',
         '- Netclinic answers: prices, opening hours, services and how to see a doctor, from Netclinic\'s own reviewed knowledge.',
         '- Nearest Netclinic clinic or Medirite pharmacy, from a suburb, town, street or postcode.',
+        '- Booking: a link to book an online doctor, sent by text or WhatsApp to the caller\'s number.',
+        '- A visit the caller already has: its own link texted to them (documents, changing or cancelling).',
         '- A call back from Netclinic\'s team when the caller wants a person.',
         '- Emergency routing: an ambulance on 10177, or 112 from a cell phone.'
       ]
@@ -3881,7 +3908,7 @@ function buildLiveBackendInstructions(mode, serviceInstructions) {
 
 function buildMinimalInstructions(mode) {
   if (normalizeServiceMode(mode) === 'netclinic') {
-    return 'You are Netty, Netclinic\'s phone assistant in South Africa. Use your medical judgment for health questions and screen for warning signs, use netclinic_answer for anything about Netclinic, find_nearest_netclinic for the nearest clinic or Medirite pharmacy, ask_for_person when the caller wants a person, ask one short question at a time, and escalate emergencies first.';
+    return 'You are Netty, Netclinic\'s phone assistant in South Africa. Use your medical judgment for health questions and screen for warning signs, use netclinic_answer for anything about Netclinic, find_nearest_netclinic for the nearest clinic or Medirite pharmacy, send_booking_link to book an online doctor, send_visit_link for a visit they already have, ask_for_person when the caller wants a person, ask one short question at a time, and escalate emergencies first.';
   }
   if (normalizeServiceMode(mode) === 'selfcare') {
     return 'You are the multilingual Self Care line. Follow the caller into any language you understand confidently, use your medical judgment for symptom reasoning, use find_clinics with your own geographic knowledge when nearby care is needed, ask one short question at a time, use record tools only with the caller\'s confirmed identity, and escalate emergencies first.';
@@ -4229,6 +4256,29 @@ function realtimeTools(mode = 'health', demoEnabled = false) {
           what: { type: 'string', enum: ['clinic', 'pharmacy'], description: 'clinic for a Netclinic clinic, pharmacy for a Medirite pharmacy.' }
         },
         required: ['place', 'what']
+      }
+    },
+    {
+      type: 'function',
+      name: 'send_booking_link',
+      description: 'Send the caller the link to book an online Netclinic doctor, by text or WhatsApp to the number they are calling from. Call it once the caller wants to see a doctor and you have said the fee.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: 'What the visit is about, in a few words, for the team\'s note.' }
+        }
+      }
+    },
+    {
+      type: 'function',
+      name: 'send_visit_link',
+      description: 'Text the caller the link to a visit they already have (documents, sick note, script, the doctor\'s status, changing or cancelling), to the number they are calling from. When several people\'s visits are on that number it asks for the patient\'s full name and date of birth.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The patient\'s full name, only once the tool has asked for it.' },
+          dob: { type: 'string', description: 'The patient\'s date of birth as YYYY-MM-DD, only once the tool has asked for it.' }
+        }
       }
     },
     {

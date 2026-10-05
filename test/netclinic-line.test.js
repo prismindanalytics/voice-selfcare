@@ -95,7 +95,7 @@ test('Netty greets as Netclinic and says the call is transcribed', () => {
 
 test('the netclinic line has its own tools, voice and prompt rules', () => {
   const tools = sourceBetween('const netclinicTools = [', 'const normalized = normalizeServiceMode(mode);');
-  for (const name of ['netclinic_answer', 'find_nearest_netclinic', 'ask_for_person']) {
+  for (const name of ['netclinic_answer', 'find_nearest_netclinic', 'send_booking_link', 'send_visit_link', 'ask_for_person']) {
     assert.match(tools, new RegExp(`name: '${name}'`));
   }
   assert.match(source, /if \(normalized === 'netclinic'\) return \[emergencyTool, \.\.\.netclinicTools\];/);
@@ -103,7 +103,10 @@ test('the netclinic line has its own tools, voice and prompt rules', () => {
   const prompt = sourceBetween('const NETCLINIC_INSTRUCTIONS = `', '`;');
   assert.match(prompt, /one zero one seven seven, or one one two from a cell phone/);
   assert.match(prompt, /Never say a booking was made/);
-  assert.match(prompt, /You have no patient records, visits or documents on this line/);
+  assert.match(prompt, /ask for the patient's full name and date of birth once/);
+  assert.match(source, /kind: 'booking'/);
+  assert.match(source, /kind: 'visit', name:/);
+  assert.match(prompt, /You never read a patient's records, documents or anything clinical on this line/);
   assert.match(prompt, /Medirite is "medi" as in medical, then "rite" as in right/);
   // a respelling is what the model copies into its words (seen on the first test call: "MED-ee-rite Sea Point")
   assert.doesNotMatch(source, /MED-ee-rite|BLOW-berg|NET-clinic|NET-ee/);
